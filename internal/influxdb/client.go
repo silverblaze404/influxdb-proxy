@@ -77,6 +77,66 @@ func (c *Client) Query(query, database string) (*http.Response, error) {
 	return resp, nil
 }
 
+// ForwardRequest forwards any HTTP request to InfluxDB
+func (c *Client) ForwardRequest(r *http.Request) (*http.Response, error) {
+	// Prepare the target URL
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
+
+	// Preserve the original path and query parameters
+	u.Path = r.URL.Path
+	u.RawQuery = r.URL.RawQuery
+
+	// Add authentication if configured and not already present
+	if c.username != "" && c.password != "" {
+		q := u.Query()
+		// Only add auth if not already present in the original request
+		if q.Get("u") == "" && q.Get("p") == "" {
+			q.Set("u", c.username)
+			q.Set("p", c.password)
+			u.RawQuery = q.Encode()
+		}
+	}
+
+	// Create new request with the same method and body
+	var body io.Reader
+	if r.Body != nil {
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
+		body = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequest(r.Method, u.String(), body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Copy headers from original request (except Host)
+	for k, v := range r.Header {
+		if k != "Host" {
+			req.Header[k] = v
+		}
+	}
+
+	log.WithFields(log.Fields{
+		"method": r.Method,
+		"url":    u.String(),
+		"path":   r.URL.Path,
+	}).Debug("Forwarding request to InfluxDB")
+
+	// Execute the request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to forward request: %w", err)
+	}
+
+	return resp, nil
+}
+
 // Health checks if InfluxDB is healthy
 func (c *Client) Health() error {
 	u, err := url.Parse(c.baseURL)

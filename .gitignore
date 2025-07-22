@@ -1,0 +1,119 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# Build artifacts
+influxdb-proxy
+/influxdb-proxy
+*.bin
+
+# Test coverage files
+coverage.out
+coverage.html
+*.cover
+*.coverprofile
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Configuration files (uncomment if you want to ignore local configs)
+# config.local.yaml
+# config.dev.yaml
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# Temporary files
+tmp/
+temp/
+
+# Debug files
+debug
+__debug_bin
+
+# Air live reload tool
+tmp/
+.air.toml
+
+# golangci-lint cache
+.golangci-lint-cache/
+
+# Profile output
+*.prof
+*.pprof
+
+# Delve debugger
+__debug_bin*
+
+# Local development files
+local/
+dev/
+
+# Certificate files (if any)
+*.pem
+*.key
+*.crt
+*.cert
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Node modules (if using any frontend tools)
+node_modules/
+
+# Python cache (if using any Python tools)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# InfluxDB data (if running locally)
+influxdb_data/
+data/

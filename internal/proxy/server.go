@@ -75,16 +75,19 @@ func NewServer(cfg *config.Config) (*Server, error) {
 func (s *Server) Handler() http.Handler {
 	r := mux.NewRouter()
 
-	// Query endpoint
+	// Query endpoint with filtering (highest priority)
 	r.HandleFunc("/query", s.handleQuery).Methods("POST", "GET")
 
-	// Health check endpoint
+	// Proxy health check endpoint
 	r.HandleFunc("/health", s.handleHealth).Methods("GET")
 
-	// Metrics endpoint (if enabled)
+	// Proxy metrics endpoint (if enabled)
 	if s.config.Metrics.Enabled {
 		r.HandleFunc(s.config.Metrics.Path, s.handleMetrics).Methods("GET")
 	}
+
+	// Catch-all handler for all other InfluxDB endpoints - forward directly
+	r.PathPrefix("/").HandlerFunc(s.handleForward)
 
 	// Add logging middleware
 	r.Use(s.loggingMiddleware)
@@ -161,6 +164,42 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		"query":  query,
 		"status": resp.StatusCode,
 	}).Debug("Query executed successfully")
+}
+
+func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
+	// Forward all non-query requests directly to InfluxDB
+	resp, err := s.influxClient.ForwardRequest(r)
+	if err != nil {
+		atomic.AddInt64(&s.metrics.Errors, 1)
+		log.WithError(err).WithField("path", r.URL.Path).Error("Failed to forward request to InfluxDB")
+
+		// Return a generic 502 Bad Gateway without custom JSON formatting
+		// to maintain transparency when InfluxDB is unreachable
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("Bad Gateway: InfluxDB unreachable"))
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy ALL response headers exactly as they are
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+
+	// Set status code exactly as returned by InfluxDB
+	w.WriteHeader(resp.StatusCode)
+
+	// Copy response body exactly as returned by InfluxDB
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.WithError(err).WithField("path", r.URL.Path).Error("Failed to copy response body")
+		// Note: We can't change the response at this point since headers are already sent
+	}
+
+	log.WithFields(log.Fields{
+		"method": r.Method,
+		"path":   r.URL.Path,
+		"status": resp.StatusCode,
+	}).Debug("Request forwarded successfully")
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
