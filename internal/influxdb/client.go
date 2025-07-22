@@ -21,12 +21,27 @@ type Client struct {
 
 // NewClient creates a new InfluxDB client
 func NewClient(baseURL, username, password string, timeout time.Duration) *Client {
+	// Configure HTTP client for high concurrency and performance
+	transport := &http.Transport{
+		MaxIdleConns:          200,              // Total idle connections across all hosts
+		MaxIdleConnsPerHost:   50,               // Idle connections per host (increased)
+		MaxConnsPerHost:       100,              // Max connections per host (doubled)
+		IdleConnTimeout:       90 * time.Second, // Keep connections alive
+		DisableCompression:    true,             // Disable compression for better performance
+		TLSHandshakeTimeout:   10 * time.Second, // TLS handshake timeout
+		ExpectContinueTimeout: 1 * time.Second,  // Expect: 100-continue timeout
+		ResponseHeaderTimeout: 30 * time.Second, // Header read timeout
+		DisableKeepAlives:     false,            // Enable keep-alive
+		ForceAttemptHTTP2:     false,            // Stick to HTTP/1.1 for better connection reuse
+	}
+
 	return &Client{
 		baseURL:  baseURL,
 		username: username,
 		password: password,
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 	}
 }

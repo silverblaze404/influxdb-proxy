@@ -8,6 +8,13 @@ proxy:
   port: 8087
   host: "0.0.0.0"
   max_query_timeout: 30      # seconds
+  performance:
+    max_idle_conns: 200           # Total idle connections to InfluxDB
+    max_idle_conns_per_host: 50   # Idle connections per InfluxDB host
+    max_conns_per_host: 100       # Max concurrent connections per InfluxDB host
+    read_timeout_seconds: 30      # HTTP read timeout
+    write_timeout_seconds: 120    # HTTP write timeout (for large responses)
+    idle_timeout_seconds: 120     # HTTP idle timeout (keep-alive)
   filtering_rules:
     # Time-based filtering
     require_time_filter: true

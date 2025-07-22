@@ -54,14 +54,14 @@ func main() {
 		log.Fatalf("Failed to create proxy server: %v", err)
 	}
 
-	// Setup HTTP server
+	// Setup HTTP server with optimized settings for high concurrency
 	addr := fmt.Sprintf("%s:%d", cfg.Proxy.Host, cfg.Proxy.Port)
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      proxyServer.Handler(),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  30 * time.Second,  // Time to read request
+		WriteTimeout: 120 * time.Second, // Time to write response (increased for large responses)
+		IdleTimeout:  120 * time.Second, // Keep-alive timeout (increased)
 	}
 
 	// Start server in a goroutine
