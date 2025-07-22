@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  influxdb:
+    image: influxdb:1.8
+    container_name: influxdb-test
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=testdb
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=password
+      - INFLUXDB_USER=user
+      - INFLUXDB_USER_PASSWORD=userpass
+    volumes:
+      - influxdb_data:/var/lib/influxdb
+
+  proxy:
+    build: .
+    container_name: influxdb-proxy
+    ports:
+      - "8087:8087"
+    environment:
+      - CONFIG_FILE=/app/config.yaml
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - influxdb
+    command: ["/app/influxdb-proxy", "-config", "/app/config.yaml"]
+
+volumes:
+  influxdb_data:

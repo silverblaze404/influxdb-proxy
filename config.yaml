@@ -1,0 +1,44 @@
+influxdb:
+  url: "http://localhost:8086"
+  username: ""
+  password: ""
+  database: ""
+
+proxy:
+  port: 8087
+  host: "0.0.0.0"
+  max_query_timeout: 30      # seconds
+  filtering_rules:
+    # Time-based filtering
+    require_time_filter: true
+    max_time_range_hours: 168  # 7 days max time range
+    
+    # Performance filtering
+    block_wildcard_select: false       # Block SELECT * without LIMIT
+    block_unlimited_group_by: true    # Block GROUP BY without LIMIT or time bucketing
+    block_expensive_shows: true       # Block SHOW SERIES without LIMIT
+    max_show_series_limit: 10000      # Max LIMIT for SHOW SERIES queries
+    
+    # Function/statement filtering
+    blocked_functions:
+      - "count(*)"                    # Block count(*) without WHERE clause
+    blocked_statements:
+      - "CREATE"                      # Block CREATE statements
+      - "DROP"                        # Block DROP statements
+      - "DELETE"                      # Block DELETE statements
+    allowed_statements:
+      - "SELECT"
+      - "SHOW DATABASES"
+      - "SHOW MEASUREMENTS"
+      - "SHOW TAG KEYS"
+      - "SHOW TAG VALUES"
+      - "SHOW FIELD KEYS"
+      - "SHOW SERIES"
+
+logging:
+  level: "info"
+  format: "json"  # json or text
+
+metrics:
+  enabled: true
+  path: "/metrics"
