@@ -17,10 +17,16 @@ type Config struct {
 
 // InfluxDBConfig contains InfluxDB connection settings
 type InfluxDBConfig struct {
-	URL      string `yaml:"url"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	Database string `yaml:"database"`
+}
+
+// URL returns the complete InfluxDB URL
+func (c *InfluxDBConfig) URL() string {
+	return fmt.Sprintf("http://%s:%d", c.Host, c.Port)
 }
 
 // ProxyConfig contains proxy server settings
@@ -129,8 +135,11 @@ func setDefaults(config *Config) {
 }
 
 func validate(config *Config) error {
-	if config.InfluxDB.URL == "" {
-		return fmt.Errorf("influxdb.url is required")
+	if config.InfluxDB.Host == "" {
+		return fmt.Errorf("influxdb.host is required")
+	}
+	if config.InfluxDB.Port < 1 || config.InfluxDB.Port > 65535 {
+		return fmt.Errorf("influxdb.port must be between 1 and 65535")
 	}
 	if config.Proxy.Port < 1 || config.Proxy.Port > 65535 {
 		return fmt.Errorf("proxy.port must be between 1 and 65535")

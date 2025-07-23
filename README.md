@@ -30,7 +30,8 @@ Configure the proxy by editing `config.yaml`:
 
 ```yaml
 influxdb:
-  url: "http://localhost:8086"
+  host: "localhost"
+  port: 8086
   username: ""
   password: ""
   database: ""
@@ -85,7 +86,8 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 
 ### InfluxDB Connection
 
-- `influxdb.url`: URL of the target InfluxDB instance
+- `influxdb.host`: Hostname of the target InfluxDB instance
+- `influxdb.port`: Port of the target InfluxDB instance
 - `influxdb.username`: InfluxDB username (optional)
 - `influxdb.password`: InfluxDB password (optional)
 - `influxdb.database`: Default database name (optional)

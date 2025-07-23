@@ -120,7 +120,7 @@ Located in `internal/config/config.go`, configuration handles:
 
 The proxy is configured via `config.yaml` with these main sections:
 
-- **InfluxDB Connection**: Target database URL and credentials
+- **InfluxDB Connection**: Target database host, port and credentials
 - **Proxy Settings**: Port, host, and performance parameters
 - **Filtering Rules**: Query validation and blocking criteria
 - **Logging**: Log level and format settings

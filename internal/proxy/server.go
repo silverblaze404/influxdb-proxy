@@ -47,7 +47,7 @@ type ErrorResponse struct {
 func NewServer(cfg *config.Config) (*Server, error) {
 	// Create InfluxDB client
 	influxClient := influxdb.NewClient(
-		cfg.InfluxDB.URL,
+		cfg.InfluxDB.URL(),
 		cfg.InfluxDB.Username,
 		cfg.InfluxDB.Password,
 		time.Duration(cfg.Proxy.MaxQueryTimeout)*time.Second,
