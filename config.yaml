@@ -48,4 +48,4 @@ logging:
 
 metrics:
   enabled: true
-  path: "/metrics"
+  path: "/proxy_metrics"

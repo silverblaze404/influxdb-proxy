@@ -1,6 +1,6 @@
 # InfluxDB Proxy Server
 
-A Go-based proxy server for InfluxDB that filters and rejects expensive queries to protect your database from performance issues.
+A Go-based proxy server for InfluxDB v1 that filters and rejects expensive queries to protect your database from performance issues.
 
 ## Features
 
@@ -13,55 +13,115 @@ A Go-based proxy server for InfluxDB that filters and rejects expensive queries 
 
 ## Quick Start
 
-1. Clone the repository:
+Clone the repository:
+
 ```bash
-git clone https://github.com/<your-org>/gm-influxdb-proxy.git
+git clone https://github.com/greyorange-labs/gm-influxdb-proxy.git
 cd gm-influxdb-proxy
 ```
 
-2. Install dependencies:
+Install dependencies:
+
 ```bash
 go mod download
 ```
 
-3. Configure the proxy by editing `config.yaml`:
+Configure the proxy by editing `config.yaml`:
+
 ```yaml
 influxdb:
   url: "http://localhost:8086"
   username: ""
   password: ""
+  database: ""
 
 proxy:
   port: 8087
-  max_time_range_hours: 168  # 7 days
-  require_time_filter: true
+  host: "0.0.0.0"
+  max_query_timeout: 30
+  performance:
+    max_idle_conns: 200
+    max_idle_conns_per_host: 50
+    max_conns_per_host: 100
+    read_timeout_seconds: 30
+    write_timeout_seconds: 120
+    idle_timeout_seconds: 120
+  filtering_rules:
+    require_time_filter: true
+    max_time_range_hours: 168  # 7 days
+    block_wildcard_select: false
+    block_unlimited_group_by: true
+    block_expensive_shows: true
+    max_show_series_limit: 10000
+    blocked_functions:
+      - "count(*)"
+    blocked_statements:
+      - "CREATE"
+      - "DROP"
+      - "DELETE"
+    allowed_statements:
+      - "SELECT"
+      - "SHOW DATABASES"
+      - "SHOW MEASUREMENTS"
 
 logging:
   level: "info"
+  format: "json"
+
+metrics:
+  enabled: true
+  path: "/proxy_metrics"
 ```
 
-4. Run the proxy:
+Run the proxy:
+
 ```bash
 go run cmd/proxy/main.go
 ```
 
 ## Configuration
 
-The proxy uses a YAML configuration file (`config.yaml`) with the following options:
+The proxy uses a YAML configuration file (`config.yaml`) with the following main sections:
+
+### InfluxDB Connection
 
 - `influxdb.url`: URL of the target InfluxDB instance
 - `influxdb.username`: InfluxDB username (optional)
 - `influxdb.password`: InfluxDB password (optional)
-- `proxy.port`: Port for the proxy server
-- `proxy.max_time_range_hours`: Maximum allowed time range in hours
-- `proxy.require_time_filter`: Whether to require time filters in queries
+- `influxdb.database`: Default database name (optional)
+
+### Proxy Settings
+
+- `proxy.port`: Port for the proxy server (default: 8087)
+- `proxy.host`: Host interface to bind to (default: "0.0.0.0")
+- `proxy.max_query_timeout`: Maximum query timeout in seconds
+
+### Performance Tuning
+
+- `proxy.performance.max_idle_conns`: Total idle connections to InfluxDB
+- `proxy.performance.max_idle_conns_per_host`: Idle connections per InfluxDB host
+- `proxy.performance.max_conns_per_host`: Max concurrent connections per host
+
+### Filtering Rules
+
+- `proxy.filtering_rules.require_time_filter`: Require time filters in queries
+- `proxy.filtering_rules.max_time_range_hours`: Maximum allowed time range
+- `proxy.filtering_rules.block_wildcard_select`: Block SELECT * without LIMIT
+- `proxy.filtering_rules.block_unlimited_group_by`: Block GROUP BY without LIMIT
+- `proxy.filtering_rules.blocked_functions`: List of blocked functions
+- `proxy.filtering_rules.blocked_statements`: List of blocked SQL statements
+
+### Logging
+
 - `logging.level`: Log level (debug, info, warn, error)
+- `logging.format`: Log format (json or text)
 
 ## API Endpoints
 
 - `POST /query` - Execute InfluxDB queries (with filtering)
-- `GET /health` - Health check endpoint
-- `GET /metrics` - Basic metrics endpoint
+- `GET /proxy_health` - Health check endpoint  
+- `GET /proxy_metrics` - Prometheus-style metrics endpoint (if enabled)
+- All other REST endpoints exposed by influxdb v1
 
 ## Query Filtering Rules
 
@@ -75,11 +135,12 @@ The proxy applies the following filtering rules:
 
 ### Project Structure
 
-```
+```text
 .
 ├── cmd/
 │   └── proxy/          # Main application entry point
 ├── internal/
+│   ├── banner/         # Application banner and logo
 │   ├── config/         # Configuration management
 │   ├── filter/         # Query filtering logic
 │   ├── proxy/          # HTTP proxy implementation

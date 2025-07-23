@@ -79,7 +79,7 @@ func (s *Server) Handler() http.Handler {
 	r.HandleFunc("/query", s.handleQuery).Methods("POST", "GET")
 
 	// Proxy health check endpoint
-	r.HandleFunc("/health", s.handleHealth).Methods("GET")
+	r.HandleFunc("/proxy_health", s.handleHealth).Methods("GET")
 
 	// Proxy metrics endpoint (if enabled)
 	if s.config.Metrics.Enabled {
