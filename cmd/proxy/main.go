@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"gm-influxdb-proxy/internal/banner"
 	"gm-influxdb-proxy/internal/config"
 	"gm-influxdb-proxy/internal/proxy"
 
@@ -30,7 +31,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("%s version %s\n", AppName, AppVersion)
+		fmt.Println(banner.GetVersion(AppName, AppVersion))
 		os.Exit(0)
 	}
 
@@ -42,6 +43,9 @@ func main() {
 
 	// Setup logging
 	setupLogging(cfg.Logging)
+
+	// Display trademark logo
+	banner.Display(AppVersion)
 
 	log.WithFields(log.Fields{
 		"version": AppVersion,
