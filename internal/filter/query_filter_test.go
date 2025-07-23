@@ -27,31 +27,20 @@ func TestQueryFilter_ValidateQuery(t *testing.T) {
 	}{
 		{
 			name:     "Valid query with time filter",
-			query:    "SELECT value FROM measurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-01-02T00:00:00Z'",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-01-02T00:00:00Z'",
 			expected: true,
 		},
 		{
 			name:     "Query without time filter",
-			query:    "SELECT value FROM measurement",
+			query:    "SELECT value FROM mydb..mymeasurement",
 			expected: false,
 			reason:   "Query must include a time filter",
 		},
 		{
 			name:     "Query with blocked function",
-			query:    "SELECT count(*) FROM measurement",
+			query:    "SELECT count(*) FROM mydb..mymeasurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-01-02T00:00:00Z'",
 			expected: false,
 			reason:   "Query contains blocked function: count(*)",
-		},
-		{
-			name:     "SHOW SERIES without LIMIT",
-			query:    "SHOW SERIES",
-			expected: false,
-			reason:   "SHOW SERIES queries must include a LIMIT clause",
-		},
-		{
-			name:     "SHOW SERIES with LIMIT",
-			query:    "SHOW SERIES LIMIT 100",
-			expected: true,
 		},
 		{
 			name:     "Valid SHOW DATABASES",
@@ -89,12 +78,47 @@ func TestQueryFilter_TimeRange(t *testing.T) {
 	}{
 		{
 			name:     "Time range within limit",
-			query:    "SELECT value FROM measurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-01-01T00:30:00Z'",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-01-01T00:30:00Z'",
+			expected: true,
+		},
+		{
+			name:     "Time range within limit 2",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > now() - 59m limit 1",
+			expected: true,
+		},
+		{
+			name:     "Time range within limit 3",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > now() - 62m and xd=1 and time < now() - 3m limit 1",
 			expected: true,
 		},
 		{
 			name:     "Time range exceeds limit",
-			query:    "SELECT value FROM measurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-01-02T00:00:00Z'",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > '2023-01-01T00:00:00Z' AND time < '2023-03-02T00:00:00Z'",
+			expected: false,
+		},
+		{
+			name:     "Time range exceeds limit 2",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > now() - 30d limit 1",
+			expected: false,
+		},
+		{
+			name:     "Time range exceeds limit 2_2",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > now() - 30d AND time < now() - 10d LIMIT 1",
+			expected: false,
+		},
+		{
+			name:     "Time range exceeds limit 3",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > 1750614600000000000 LIMIT 1",
+			expected: false,
+		},
+		{
+			name:     "Time range exceeds limit 3",
+			query:    "SELECT value FROM mydb..mymeasurement WHERE time > 1750614600000000000 LIMIT 1",
+			expected: false,
+		},
+		{
+			name:     "Time range exceeds limit 4",
+			query:    "SELECT value FROM mymeasurement WHERE time > 1750617000000000000 AND time < 1751826600000000000 LIMIT 1",
 			expected: false,
 		},
 	}

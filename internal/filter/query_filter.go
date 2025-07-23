@@ -3,6 +3,7 @@ package filter
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +32,16 @@ func NewQueryFilter(rules config.FilteringRules) *QueryFilter {
 
 	// Compile regex patterns for blocked functions
 	for _, fn := range rules.BlockedFunctions {
-		pattern := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(fn) + `\b`)
+		// Use word boundaries for simple function names, but handle special cases like count(*)
+		escapedFn := regexp.QuoteMeta(fn)
+		var pattern *regexp.Regexp
+		if strings.Contains(fn, "(") {
+			// For functions with parentheses, don't use word boundaries around the whole thing
+			pattern = regexp.MustCompile(`(?i)` + escapedFn)
+		} else {
+			// For simple identifiers, use word boundaries
+			pattern = regexp.MustCompile(`(?i)\b` + escapedFn + `\b`)
+		}
 		patterns = append(patterns, pattern)
 	}
 
@@ -122,20 +132,23 @@ func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, q
 		if !qf.hasTimeFilter(stmt.Condition) {
 			return FilterResult{
 				Allowed: false,
-				Reason:  "Query must include a time filter (WHERE time > ... AND time < ...)",
+				Reason:  "Query must include a time filter",
 				Query:   queryString,
 			}
 		}
 	}
 
-	// Check time range if time filter exists
-	if timeRange := qf.extractTimeRange(stmt.Condition); timeRange != nil {
-		maxDuration := time.Duration(qf.rules.MaxTimeRangeHours) * time.Hour
-		if timeRange.Duration() > maxDuration {
-			return FilterResult{
-				Allowed: false,
-				Reason:  fmt.Sprintf("Time range (%v) exceeds maximum allowed (%v)", timeRange.Duration(), maxDuration),
-				Query:   queryString,
+	// Check time range if time filter exists and max time range is configured
+	if qf.rules.MaxTimeRangeHours > 0 {
+		if timeRange := qf.extractTimeRange(stmt.Condition); timeRange != nil {
+			maxDuration := time.Duration(qf.rules.MaxTimeRangeHours) * time.Hour
+			actualDuration := timeRange.Duration()
+			if actualDuration > maxDuration {
+				return FilterResult{
+					Allowed: false,
+					Reason:  fmt.Sprintf("Time range (%v) exceeds maximum allowed (%v)", actualDuration, maxDuration),
+					Query:   queryString,
+				}
 			}
 		}
 	}
@@ -218,29 +231,173 @@ func (qf *QueryFilter) extractTimeRange(condition influxql.Expr) *TimeRange {
 	var start, end time.Time
 	qf.extractTimeConditions(condition, &start, &end)
 
+	// Handle cases where we have both start and end times
 	if !start.IsZero() && !end.IsZero() {
 		return &TimeRange{Start: start, End: end}
 	}
+
+	// Handle cases where we only have a start time - assume end time is now
+	if !start.IsZero() && end.IsZero() {
+		return &TimeRange{Start: start, End: time.Now()}
+	}
+
+	// Handle cases where we only have an end time - this is less common but possible
+	if start.IsZero() && !end.IsZero() {
+		// For queries like "time < some_time", we need to guess a reasonable start
+		// Use a very old time as start to represent "from beginning of time"
+		return &TimeRange{Start: time.Unix(0, 0), End: end}
+	}
+
 	return nil
 }
 
 func (qf *QueryFilter) extractTimeConditions(expr influxql.Expr, start, end *time.Time) {
 	switch e := expr.(type) {
 	case *influxql.BinaryExpr:
+		// Check for direct time conditions
 		if ref, ok := e.LHS.(*influxql.VarRef); ok && ref.Val == "time" {
+			// Handle both StringLiteral and TimeLiteral
+			var timeVal time.Time
+			var err error
+
 			if timeLit, ok := e.RHS.(*influxql.TimeLiteral); ok {
+				timeVal = timeLit.Val
+			} else if strLit, ok := e.RHS.(*influxql.StringLiteral); ok {
+				timeVal, err = time.Parse(time.RFC3339, strLit.Val)
+				if err != nil {
+					// Try other common time formats if RFC3339 fails
+					timeVal, err = time.Parse("2006-01-02T15:04:05Z", strLit.Val)
+				}
+			} else if intLit, ok := e.RHS.(*influxql.IntegerLiteral); ok {
+				// Handle integer timestamps (nanoseconds since Unix epoch)
+				timeVal = time.Unix(0, intLit.Val)
+			} else if binExpr, ok := e.RHS.(*influxql.BinaryExpr); ok {
+				// Handle relative time expressions like "now() - 30d"
+				timeVal = qf.evaluateTimeExpression(binExpr)
+			}
+
+			if err == nil && !timeVal.IsZero() {
 				switch e.Op {
 				case influxql.GT, influxql.GTE:
-					*start = timeLit.Val
+					*start = timeVal
 				case influxql.LT, influxql.LTE:
-					*end = timeLit.Val
+					*end = timeVal
+				}
+			}
+		} else if ref, ok := e.RHS.(*influxql.VarRef); ok && ref.Val == "time" {
+			// Handle reverse cases: literal < time or literal > time
+			var timeVal time.Time
+			var err error
+
+			if timeLit, ok := e.LHS.(*influxql.TimeLiteral); ok {
+				timeVal = timeLit.Val
+			} else if strLit, ok := e.LHS.(*influxql.StringLiteral); ok {
+				timeVal, err = time.Parse(time.RFC3339, strLit.Val)
+				if err != nil {
+					timeVal, err = time.Parse("2006-01-02T15:04:05Z", strLit.Val)
+				}
+			} else if intLit, ok := e.LHS.(*influxql.IntegerLiteral); ok {
+				// Handle integer timestamps (nanoseconds since Unix epoch)
+				timeVal = time.Unix(0, intLit.Val)
+			}
+
+			if err == nil && !timeVal.IsZero() {
+				switch e.Op {
+				case influxql.LT, influxql.LTE:
+					*start = timeVal
+				case influxql.GT, influxql.GTE:
+					*end = timeVal
 				}
 			}
 		}
+
+		// Always recursively check both sides for nested conditions
 		qf.extractTimeConditions(e.LHS, start, end)
 		qf.extractTimeConditions(e.RHS, start, end)
 	case *influxql.ParenExpr:
 		qf.extractTimeConditions(e.Expr, start, end)
+	}
+}
+
+// evaluateTimeExpression evaluates relative time expressions like "now() - 30d"
+func (qf *QueryFilter) evaluateTimeExpression(expr *influxql.BinaryExpr) time.Time {
+	// Handle binary expressions like "now() - 30d"
+	if expr.Op == influxql.SUB {
+		// Check if LHS is a now() function call
+		if call, ok := expr.LHS.(*influxql.Call); ok && call.Name == "now" {
+			now := time.Now()
+			// Check if RHS is a duration literal
+			if duration := qf.parseDuration(expr.RHS); duration > 0 {
+				return now.Add(-duration)
+			}
+		}
+	} else if expr.Op == influxql.ADD {
+		// Handle addition: now() + 1h
+		if call, ok := expr.LHS.(*influxql.Call); ok && call.Name == "now" {
+			now := time.Now()
+			if duration := qf.parseDuration(expr.RHS); duration > 0 {
+				return now.Add(duration)
+			}
+		}
+	}
+	return time.Time{}
+}
+
+// parseDuration parses duration strings like "30d", "1h", "5m"
+func (qf *QueryFilter) parseDuration(expr influxql.Expr) time.Duration {
+	switch e := expr.(type) {
+	case *influxql.DurationLiteral:
+		return e.Val
+	case *influxql.StringLiteral:
+		// Parse string duration
+		if d, err := time.ParseDuration(e.Val); err == nil {
+			return d
+		}
+		// Handle InfluxDB specific durations like "30d" which Go doesn't support
+		return qf.parseInfluxDuration(e.Val)
+	case *influxql.IntegerLiteral:
+		// Assume it's nanoseconds if just a number
+		return time.Duration(e.Val)
+	}
+	return 0
+}
+
+// parseInfluxDuration parses InfluxDB-specific duration formats
+func (qf *QueryFilter) parseInfluxDuration(durationStr string) time.Duration {
+	if len(durationStr) < 2 {
+		return 0
+	}
+
+	// Extract number and unit
+	var num int64
+	var unit string
+	for i := len(durationStr) - 1; i >= 0; i-- {
+		if durationStr[i] >= '0' && durationStr[i] <= '9' {
+			num, _ = strconv.ParseInt(durationStr[:i+1], 10, 64)
+			unit = durationStr[i+1:]
+			break
+		}
+	}
+
+	switch unit {
+	case "ns":
+		return time.Duration(num) * time.Nanosecond
+	case "us", "µs":
+		return time.Duration(num) * time.Microsecond
+	case "ms":
+		return time.Duration(num) * time.Millisecond
+	case "s":
+		return time.Duration(num) * time.Second
+	case "m":
+		return time.Duration(num) * time.Minute
+	case "h":
+		return time.Duration(num) * time.Hour
+	case "d":
+		return time.Duration(num) * 24 * time.Hour
+	case "w":
+		return time.Duration(num) * 7 * 24 * time.Hour
+	default:
+		return 0
 	}
 }
 
