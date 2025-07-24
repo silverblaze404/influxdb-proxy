@@ -106,21 +106,10 @@ func (qf *QueryFilter) validateStatement(stmt influxql.Statement, queryString st
 		return qf.validateSelectStatement(s, queryString)
 	case *influxql.ShowSeriesStatement:
 		return qf.validateShowSeriesStatement(s, queryString)
-	case *influxql.ShowMeasurementsStatement:
-		return FilterResult{Allowed: true, Query: queryString}
-	case *influxql.ShowDatabasesStatement:
-		return FilterResult{Allowed: true, Query: queryString}
-	case *influxql.ShowTagKeysStatement:
-		return FilterResult{Allowed: true, Query: queryString}
-	case *influxql.ShowTagValuesStatement:
-		return FilterResult{Allowed: true, Query: queryString}
-	case *influxql.ShowFieldKeysStatement:
-		return FilterResult{Allowed: true, Query: queryString}
 	default:
-		// Block other statement types by default
+		// Don't block other statement types by default
 		return FilterResult{
-			Allowed: false,
-			Reason:  fmt.Sprintf("Statement type not allowed: %T", stmt),
+			Allowed: true,
 			Query:   queryString,
 		}
 	}
@@ -322,7 +311,8 @@ func (qf *QueryFilter) extractTimeConditions(expr influxql.Expr, start, end *tim
 // evaluateTimeExpression evaluates relative time expressions like "now() - 30d"
 func (qf *QueryFilter) evaluateTimeExpression(expr *influxql.BinaryExpr) time.Time {
 	// Handle binary expressions like "now() - 30d"
-	if expr.Op == influxql.SUB {
+	switch expr.Op {
+	case influxql.SUB:
 		// Check if LHS is a now() function call
 		if call, ok := expr.LHS.(*influxql.Call); ok && call.Name == "now" {
 			now := time.Now()
@@ -331,7 +321,7 @@ func (qf *QueryFilter) evaluateTimeExpression(expr *influxql.BinaryExpr) time.Ti
 				return now.Add(-duration)
 			}
 		}
-	} else if expr.Op == influxql.ADD {
+	case influxql.ADD:
 		// Handle addition: now() + 1h
 		if call, ok := expr.LHS.(*influxql.Call); ok && call.Name == "now" {
 			now := time.Now()
@@ -454,7 +444,17 @@ func (qf *QueryFilter) getStatementType(stmt influxql.Statement) string {
 		return "CREATE"
 	case *influxql.DropDatabaseStatement:
 		return "DROP"
+	case *influxql.DropMeasurementStatement:
+		return "DROP"
+	case *influxql.DropRetentionPolicyStatement:
+		return "DROP"
+	case *influxql.DropSubscriptionStatement:
+		return "DROP"
+	case *influxql.DropUserStatement:
+		return "DROP"
 	case *influxql.DeleteSeriesStatement:
+		return "DELETE"
+	case *influxql.DeleteStatement:
 		return "DELETE"
 	default:
 		return fmt.Sprintf("%T", stmt)
@@ -470,18 +470,6 @@ func (qf *QueryFilter) isStatementAllowed(stmtType string) bool {
 		}
 	}
 
-	// Check if explicitly allowed
-	for _, allowed := range qf.rules.AllowedStatements {
-		if strings.EqualFold(allowed, stmtType) {
-			return true
-		}
-	}
-
-	// If no allowed statements specified, allow by default (except explicitly blocked)
-	if len(qf.rules.AllowedStatements) == 0 {
-		return true
-	}
-
-	// If allowed statements are specified but this type is not in the list, block it
-	return false
+	// Allow by default if not explicitly blocked
+	return true
 }

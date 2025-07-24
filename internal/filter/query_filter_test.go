@@ -15,7 +15,6 @@ func TestQueryFilter_ValidateQuery(t *testing.T) {
 		BlockExpensiveShows:   true,
 		MaxShowSeriesLimit:    100,
 		BlockedFunctions:      []string{"count(*)"},
-		AllowedStatements:     []string{"SELECT", "SHOW DATABASES", "SHOW MEASUREMENTS", "SHOW TAG KEYS", "SHOW TAG VALUES", "SHOW FIELD KEYS", "SHOW SERIES"},
 	}
 	filter := NewQueryFilter(rules)
 

@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"gopkg.in/yaml.v2"
 )
@@ -58,7 +58,6 @@ type FilteringRules struct {
 	MaxShowSeriesLimit    int      `yaml:"max_show_series_limit"`
 	BlockedFunctions      []string `yaml:"blocked_functions"`
 	BlockedStatements     []string `yaml:"blocked_statements"`
-	AllowedStatements     []string `yaml:"allowed_statements"`
 }
 
 // LoggingConfig contains logging settings
@@ -75,7 +74,7 @@ type MetricsConfig struct {
 
 // Load reads and parses the configuration file
 func Load(filename string) (*Config, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -123,14 +122,6 @@ func setDefaults(config *Config) {
 	}
 	if rules.MaxShowSeriesLimit == 0 {
 		rules.MaxShowSeriesLimit = 10000
-	}
-	// Default allowed statements if none specified
-	if len(rules.AllowedStatements) == 0 {
-		rules.AllowedStatements = []string{
-			"SELECT", "SHOW DATABASES", "SHOW MEASUREMENTS",
-			"SHOW TAG KEYS", "SHOW TAG VALUES", "SHOW FIELD KEYS",
-			"SHOW SERIES",
-		}
 	}
 }
 

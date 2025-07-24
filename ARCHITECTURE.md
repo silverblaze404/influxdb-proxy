@@ -49,7 +49,7 @@ Located in `internal/filter/query_filter.go`, the filter engine provides:
 - **Query Parser**: Uses InfluxDB's official InfluxQL library to parse and analyze queries
 - **Rule Engine**: Applies configurable filtering rules
 - **Time Validation**: Ensures queries have time filters and reasonable time ranges
-- **Statement Filtering**: Blocks dangerous statements (CREATE, DROP, DELETE)
+- **Statement Filtering**: Blocks only statements explicitly listed in configuration (blacklist approach)
 - **Function Blocking**: Prevents expensive functions like `count(*)`
 
 ### InfluxDB Client
@@ -81,7 +81,7 @@ Located in `internal/config/config.go`, configuration handles:
    - Requires time filters
    - Validates time range (max 7 days by default)
    - Blocks expensive operations
-   - Prevents dangerous statements
+   - Blocks only statements explicitly listed in `blocked_statements`
 5. **Decision**:
    - **If Allowed**: Forward to InfluxDB and return response
    - **If Blocked**: Return HTTP 403 with error message
@@ -99,7 +99,7 @@ Located in `internal/config/config.go`, configuration handles:
 
 - **Time Filter Enforcement**: Blocks queries without WHERE time clauses
 - **Time Range Limits**: Prevents queries spanning excessive time periods
-- **Statement Control**: Allows only safe read operations
+- **Statement Control**: Uses blacklist approach - blocks only explicitly configured statements
 - **Function Filtering**: Blocks expensive aggregation functions
 
 ### Performance Optimization
@@ -130,8 +130,32 @@ The proxy is configured via `config.yaml` with these main sections:
 
 - **Query Injection Protection**: InfluxDB's InfluxQL parser validates syntax and structure
 - **Resource Protection**: Prevents expensive queries that could impact performance
-- **Statement Restriction**: Blocks potentially dangerous database operations
+- **Statement Restriction**: Blocks only explicitly configured statements (blacklist approach)
 - **Time-based Filtering**: Ensures queries are bounded to prevent full table scans
+
+## Filtering Strategy
+
+The proxy uses a **blacklist-based filtering approach** for statement control:
+
+- **Default Behavior**: All statement types are allowed by default
+- **Explicit Blocking**: Only statements listed in `blocked_statements` configuration are denied
+- **Simple Logic**: If a statement type is in the blocked list → reject, otherwise → allow
+
+This approach provides:
+- **Simplicity**: Only one configuration list to manage
+- **Flexibility**: Easy to allow new statement types without configuration changes
+- **Intuitive Behavior**: Everything works unless explicitly blocked
+
+Example configuration:
+```yaml
+filtering_rules:
+  blocked_statements:
+    - "DELETE"    # Block DELETE operations
+    - "CREATE"    # Block CREATE operations
+  # All other statements (SELECT, SHOW, DROP, etc.) are automatically allowed
+```
+
+## Configuration
 
 ## Deployment
 

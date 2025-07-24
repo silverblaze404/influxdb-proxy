@@ -31,17 +31,8 @@ proxy:
     blocked_functions:
       - "count(*)"                    # Block count(*) without WHERE clause
     blocked_statements:
-      - "CREATE"                      # Block CREATE statements
-      - "DROP"                        # Block DROP statements
       - "DELETE"                      # Block DELETE statements
-    allowed_statements:
-      - "SELECT"
-      - "SHOW DATABASES"
-      - "SHOW MEASUREMENTS"
-      - "SHOW TAG KEYS"
-      - "SHOW TAG VALUES"
-      - "SHOW FIELD KEYS"
-      - "SHOW SERIES"
+      - "DROP"                        # Block DROP statements
 
 logging:
   level: "info"

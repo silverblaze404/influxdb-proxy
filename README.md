@@ -57,13 +57,7 @@ proxy:
     blocked_functions:
       - "count(*)"
     blocked_statements:
-      - "CREATE"
-      - "DROP"
-      - "DELETE"
-    allowed_statements:
-      - "SELECT"
-      - "SHOW DATABASES"
-      - "SHOW MEASUREMENTS"
+      - "DELETE"              # Only specify statements to block
 
 logging:
   level: "info"
@@ -111,7 +105,7 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 - `proxy.filtering_rules.block_wildcard_select`: Block SELECT * without LIMIT
 - `proxy.filtering_rules.block_unlimited_group_by`: Block GROUP BY without LIMIT
 - `proxy.filtering_rules.blocked_functions`: List of blocked functions
-- `proxy.filtering_rules.blocked_statements`: List of blocked SQL statements
+- `proxy.filtering_rules.blocked_statements`: List of blocked SQL statements (all others allowed by default)
 
 ### Logging
 
@@ -132,6 +126,7 @@ The proxy applies the following filtering rules:
 1. **Time Filter Requirement**: Queries must include a time filter (WHERE time > ... AND time < ...)
 2. **Time Range Limit**: Time range cannot exceed the configured maximum
 3. **Expensive Function Detection**: Blocks queries with expensive functions without proper constraints
+4. **Statement Blocking**: Only blocks statements explicitly listed in `blocked_statements` (all others allowed by default)
 
 ## Development
 
