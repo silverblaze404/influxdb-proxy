@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/realclientip/realclientip-go"
 	log "github.com/sirupsen/logrus"
 
 	"gm-influxdb-proxy/internal/config"
@@ -63,6 +65,13 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	// Create query filter
 	queryFilter := filter.NewQueryFilter(cfg.Proxy.FilteringRules)
 
+	// Log whitelisted IPs if any are configured
+	if len(cfg.Proxy.WhitelistedIPs) > 0 {
+		log.WithFields(log.Fields{
+			"whitelisted_ips": cfg.Proxy.WhitelistedIPs,
+		}).Info("Whitelisted IPs configured - these will bypass all filtering")
+	}
+
 	return &Server{
 		config:       cfg,
 		influxClient: influxClient,
@@ -98,6 +107,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt64(&s.metrics.TotalQueries, 1)
 
+	// Extract client IP
+	clientIP := s.getClientIP(r)
+
 	// Extract query from request
 	query, database, err := s.extractQuery(r)
 	if err != nil {
@@ -122,13 +134,52 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		"database": database,
 	}).Debug("Processing query")
 
-	// Validate query using filter
+	// Check if client IP is whitelisted - if so, bypass filtering
+	if s.config.Proxy.IsIPWhitelisted(clientIP) {
+		log.WithFields(log.Fields{
+			"query":     query,
+			"client_ip": clientIP,
+		}).Debug("Query from whitelisted IP - bypassing filters")
+
+		atomic.AddInt64(&s.metrics.AllowedQueries, 1)
+
+		// Forward query directly to InfluxDB without filtering
+		resp, err := s.influxClient.Query(query, database)
+		if err != nil {
+			atomic.AddInt64(&s.metrics.Errors, 1)
+			log.WithError(err).Error("Failed to execute query against InfluxDB")
+			s.sendError(w, http.StatusInternalServerError, "Failed to execute query")
+			return
+		}
+		defer resp.Body.Close()
+
+		// Copy response headers
+		maps.Copy(w.Header(), resp.Header)
+
+		// Set status code
+		w.WriteHeader(resp.StatusCode)
+
+		// Copy response body
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			log.WithError(err).Error("Failed to copy response body")
+		}
+
+		log.WithFields(log.Fields{
+			"query":     query,
+			"status":    resp.StatusCode,
+			"client_ip": clientIP,
+		}).Debug("Whitelisted query executed successfully")
+		return
+	}
+
+	// Validate query using filter for non-whitelisted IPs
 	result := s.queryFilter.ValidateQuery(query)
 	if !result.Allowed {
 		atomic.AddInt64(&s.metrics.BlockedQueries, 1)
 		log.WithFields(log.Fields{
-			"query":  query,
-			"reason": result.Reason,
+			"query":     query,
+			"reason":    result.Reason,
+			"client_ip": clientIP,
 		}).Info("Query blocked")
 
 		s.sendError(w, http.StatusForbidden, fmt.Sprintf("Query blocked: %s", result.Reason))
@@ -148,9 +199,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// Copy response headers
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), resp.Header)
 
 	// Set status code
 	w.WriteHeader(resp.StatusCode)
@@ -161,17 +210,24 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.WithFields(log.Fields{
-		"query":  query,
-		"status": resp.StatusCode,
+		"query":     query,
+		"status":    resp.StatusCode,
+		"client_ip": clientIP,
 	}).Debug("Query executed successfully")
 }
 
 func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
+	// Extract client IP
+	clientIP := s.getClientIP(r)
+
 	// Forward all non-query requests directly to InfluxDB
 	resp, err := s.influxClient.ForwardRequest(r)
 	if err != nil {
 		atomic.AddInt64(&s.metrics.Errors, 1)
-		log.WithError(err).WithField("path", r.URL.Path).Error("Failed to forward request to InfluxDB")
+		log.WithError(err).WithFields(log.Fields{
+			"path":      r.URL.Path,
+			"client_ip": clientIP,
+		}).Error("Failed to forward request to InfluxDB")
 
 		// Return a generic 502 Bad Gateway without custom JSON formatting
 		// to maintain transparency when InfluxDB is unreachable
@@ -182,23 +238,25 @@ func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// Copy ALL response headers exactly as they are
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), resp.Header)
 
 	// Set status code exactly as returned by InfluxDB
 	w.WriteHeader(resp.StatusCode)
 
 	// Copy response body exactly as returned by InfluxDB
 	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.WithError(err).WithField("path", r.URL.Path).Error("Failed to copy response body")
+		log.WithError(err).WithFields(log.Fields{
+			"path":      r.URL.Path,
+			"client_ip": clientIP,
+		}).Error("Failed to copy response body")
 		// Note: We can't change the response at this point since headers are already sent
 	}
 
 	log.WithFields(log.Fields{
-		"method": r.Method,
-		"path":   r.URL.Path,
-		"status": resp.StatusCode,
+		"method":    r.Method,
+		"path":      r.URL.Path,
+		"status":    resp.StatusCode,
+		"client_ip": clientIP,
 	}).Debug("Request forwarded successfully")
 }
 
@@ -280,6 +338,9 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
+		// Extract client IP
+		clientIP := s.getClientIP(r)
+
 		// Create a response writer wrapper to capture status code
 		wrapper := &responseWriterWrapper{ResponseWriter: w, statusCode: http.StatusOK}
 
@@ -293,6 +354,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 			"status":      wrapper.statusCode,
 			"duration":    duration,
 			"remote_addr": r.RemoteAddr,
+			"client_ip":   clientIP,
 			"user_agent":  r.UserAgent(),
 		}).Info("HTTP request processed")
 	})
@@ -306,4 +368,14 @@ type responseWriterWrapper struct {
 func (w *responseWriterWrapper) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+// getClientIP extracts the real client IP from the request
+func (s *Server) getClientIP(r *http.Request) string {
+	strat := realclientip.NewChainStrategy(
+		realclientip.Must(realclientip.NewSingleIPHeaderStrategy("Cf-Connecting-IP")),
+		realclientip.Must(realclientip.NewLeftmostNonPrivateStrategy("X-Forwarded-For")),
+		realclientip.RemoteAddrStrategy{},
+	)
+	return strat.ClientIP(r.Header, r.RemoteAddr)
 }

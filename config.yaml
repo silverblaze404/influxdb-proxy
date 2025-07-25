@@ -8,7 +8,11 @@ influxdb:
 proxy:
   port: 8087
   host: "localhost"
-  max_query_timeout: 30      # seconds
+  max_query_timeout: 30       # seconds
+  whitelisted_ips:            # IPs that bypass all filtering rules
+    # - "192.168.1.100"       # Example: specific IP
+    # - "10.0.0.0/8"          # Example: CIDR range
+    # - "127.0.0.1"           # Example: localhost
   performance:
     max_idle_conns: 200           # Total idle connections to InfluxDB
     max_idle_conns_per_host: 50   # Idle connections per InfluxDB host
@@ -29,7 +33,7 @@ proxy:
     
     # Function/statement filtering
     blocked_functions:
-      - "count(*)"                    # Block count(*) without WHERE clause
+      # - "count(*)"                   # Block count(*) without WHERE clause
     blocked_statements:
       - "DELETE"                      # Block DELETE statements
       - "DROP"                        # Block DROP statements

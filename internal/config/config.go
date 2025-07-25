@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 
 	"gopkg.in/yaml.v2"
@@ -34,6 +35,7 @@ type ProxyConfig struct {
 	Port            int               `yaml:"port"`
 	Host            string            `yaml:"host"`
 	MaxQueryTimeout int               `yaml:"max_query_timeout"` // seconds
+	WhitelistedIPs  []string          `yaml:"whitelisted_ips"`   // IPs that bypass filtering
 	FilteringRules  FilteringRules    `yaml:"filtering_rules"`
 	Performance     PerformanceConfig `yaml:"performance"`
 }
@@ -139,4 +141,35 @@ func validate(config *Config) error {
 		return fmt.Errorf("filtering_rules.max_time_range_hours must be positive")
 	}
 	return nil
+}
+
+// IsIPWhitelisted checks if the given IP address is in the whitelist
+// Supports both individual IP addresses and CIDR ranges
+func (p *ProxyConfig) IsIPWhitelisted(clientIP string) bool {
+	if len(p.WhitelistedIPs) == 0 {
+		return false
+	}
+
+	ip := net.ParseIP(clientIP)
+	if ip == nil {
+		return false
+	}
+
+	for _, whitelistedEntry := range p.WhitelistedIPs {
+		// Check if it's a CIDR range
+		if _, ipNet, err := net.ParseCIDR(whitelistedEntry); err == nil {
+			if ipNet.Contains(ip) {
+				return true
+			}
+		} else {
+			// Check if it's an individual IP
+			if whitelistedIP := net.ParseIP(whitelistedEntry); whitelistedIP != nil {
+				if ip.Equal(whitelistedIP) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
