@@ -84,7 +84,6 @@ logging:
 
 metrics:
   enabled: true
-  path: "/proxy_metrics"
 ```
 
 Run the proxy:

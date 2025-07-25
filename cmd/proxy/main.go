@@ -83,6 +83,11 @@ func main() {
 
 	log.Info("Shutting down server...")
 
+	// Cleanup proxy server resources
+	if err := proxyServer.Close(); err != nil {
+		log.WithError(err).Error("Error during proxy cleanup")
+	}
+
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

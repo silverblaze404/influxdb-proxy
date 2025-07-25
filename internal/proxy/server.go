@@ -1,11 +1,13 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -32,12 +34,6 @@ type Metrics struct {
 	BlockedQueries int64 `json:"blocked_queries"`
 	AllowedQueries int64 `json:"allowed_queries"`
 	Errors         int64 `json:"errors"`
-}
-
-// QueryRequest represents a query request
-type QueryRequest struct {
-	Query    string `json:"q"`
-	Database string `json:"db"`
 }
 
 // ErrorResponse represents an error response
@@ -92,7 +88,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Proxy metrics endpoint (if enabled)
 	if s.config.Metrics.Enabled {
-		r.HandleFunc(s.config.Metrics.Path, s.handleMetrics).Methods("GET")
+		r.HandleFunc("/proxy_metrics", s.handleMetrics).Methods("GET")
 	}
 
 	// Catch-all handler for all other InfluxDB endpoints - forward directly
@@ -110,8 +106,8 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Extract client IP
 	clientIP := s.getClientIP(r)
 
-	// Extract query from request
-	query, database, err := s.extractQuery(r)
+	// Extract query from request for filtering
+	query, _, err := s.extractQuery(r)
 	if err != nil {
 		atomic.AddInt64(&s.metrics.Errors, 1)
 		s.sendError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request: %v", err))
@@ -124,14 +120,9 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use configured database if not specified in request
-	if database == "" && s.config.InfluxDB.Database != "" {
-		database = s.config.InfluxDB.Database
-	}
-
 	log.WithFields(log.Fields{
-		"query":    query,
-		"database": database,
+		"query":     query,
+		"client_ip": clientIP,
 	}).Debug("Processing query")
 
 	// Check if client IP is whitelisted - if so, bypass filtering
@@ -142,33 +133,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}).Debug("Query from whitelisted IP - bypassing filters")
 
 		atomic.AddInt64(&s.metrics.AllowedQueries, 1)
-
-		// Forward query directly to InfluxDB without filtering
-		resp, err := s.influxClient.Query(query, database)
-		if err != nil {
-			atomic.AddInt64(&s.metrics.Errors, 1)
-			log.WithError(err).Error("Failed to execute query against InfluxDB")
-			s.sendError(w, http.StatusInternalServerError, "Failed to execute query")
-			return
-		}
-		defer resp.Body.Close()
-
-		// Copy response headers
-		maps.Copy(w.Header(), resp.Header)
-
-		// Set status code
-		w.WriteHeader(resp.StatusCode)
-
-		// Copy response body
-		if _, err := io.Copy(w, resp.Body); err != nil {
-			log.WithError(err).Error("Failed to copy response body")
-		}
-
-		log.WithFields(log.Fields{
-			"query":     query,
-			"status":    resp.StatusCode,
-			"client_ip": clientIP,
-		}).Debug("Whitelisted query executed successfully")
+		s.forwardToInfluxDB(w, r, clientIP)
 		return
 	}
 
@@ -187,40 +152,20 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	atomic.AddInt64(&s.metrics.AllowedQueries, 1)
-
-	// Forward query to InfluxDB
-	resp, err := s.influxClient.Query(query, database)
-	if err != nil {
-		atomic.AddInt64(&s.metrics.Errors, 1)
-		log.WithError(err).Error("Failed to execute query against InfluxDB")
-		s.sendError(w, http.StatusInternalServerError, "Failed to execute query")
-		return
-	}
-	defer resp.Body.Close()
-
-	// Copy response headers
-	maps.Copy(w.Header(), resp.Header)
-
-	// Set status code
-	w.WriteHeader(resp.StatusCode)
-
-	// Copy response body
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.WithError(err).Error("Failed to copy response body")
-	}
-
-	log.WithFields(log.Fields{
-		"query":     query,
-		"status":    resp.StatusCode,
-		"client_ip": clientIP,
-	}).Debug("Query executed successfully")
+	s.forwardToInfluxDB(w, r, clientIP)
 }
 
 func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
 	// Extract client IP
 	clientIP := s.getClientIP(r)
 
-	// Forward all non-query requests directly to InfluxDB
+	// Use the same forwarding logic as query endpoint
+	s.forwardToInfluxDB(w, r, clientIP)
+}
+
+// forwardToInfluxDB forwards the request to InfluxDB and handles the response
+func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clientIP string) {
+	// Forward request directly to InfluxDB
 	resp, err := s.influxClient.ForwardRequest(r)
 	if err != nil {
 		atomic.AddInt64(&s.metrics.Errors, 1)
@@ -249,6 +194,8 @@ func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
 			"path":      r.URL.Path,
 			"client_ip": clientIP,
 		}).Error("Failed to copy response body")
+		// Ensure response body is drained to allow connection reuse
+		io.Copy(io.Discard, resp.Body)
 		// Note: We can't change the response at this point since headers are already sent
 	}
 
@@ -261,7 +208,7 @@ func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	health := map[string]interface{}{
+	health := map[string]any{
 		"status":    "ok",
 		"timestamp": time.Now().UTC(),
 		"version":   "1.0.0",
@@ -279,7 +226,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	metrics := map[string]interface{}{
+	metrics := map[string]any{
 		"proxy_metrics": map[string]int64{
 			"total_queries":   atomic.LoadInt64(&s.metrics.TotalQueries),
 			"blocked_queries": atomic.LoadInt64(&s.metrics.BlockedQueries),
@@ -299,31 +246,50 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 		return r.URL.Query().Get("q"), r.URL.Query().Get("db"), nil
 	}
 
-	// For POST requests, check content type
+	// For POST requests, we need to preserve the body for forwarding
+	// Read the body content first
+	var bodyBytes []byte
+	if r.Body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read request body: %w", err)
+		}
+		// After reading, the body stream is consumed (at EOF)
+		// Replace it with a fresh reader so it can be forwarded later
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
+
+	// Check content type
 	contentType := r.Header.Get("Content-Type")
 
 	if contentType == "application/x-www-form-urlencoded" {
-		// Parse form data
-		if err := r.ParseForm(); err != nil {
+		// Parse form data from the body bytes
+		values, err := url.ParseQuery(string(bodyBytes))
+		if err != nil {
 			return "", "", fmt.Errorf("failed to parse form: %w", err)
 		}
-		return r.FormValue("q"), r.FormValue("db"), nil
+		return values.Get("q"), values.Get("db"), nil
 	}
 
 	if contentType == "application/json" {
 		// Parse JSON body
-		var req QueryRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var req struct {
+			Query    string `json:"q"`
+			Database string `json:"db"`
+		}
+		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&req); err != nil {
 			return "", "", fmt.Errorf("failed to parse JSON: %w", err)
 		}
 		return req.Query, req.Database, nil
 	}
 
 	// Default to form parsing for backward compatibility
-	if err := r.ParseForm(); err != nil {
+	values, err := url.ParseQuery(string(bodyBytes))
+	if err != nil {
 		return "", "", fmt.Errorf("failed to parse form: %w", err)
 	}
-	return r.FormValue("q"), r.FormValue("db"), nil
+	return values.Get("q"), values.Get("db"), nil
 }
 
 func (s *Server) sendError(w http.ResponseWriter, statusCode int, message string) {
@@ -378,4 +344,13 @@ func (s *Server) getClientIP(r *http.Request) string {
 		realclientip.RemoteAddrStrategy{},
 	)
 	return strat.ClientIP(r.Header, r.RemoteAddr)
+}
+
+// Close performs cleanup of server resources
+func (s *Server) Close() error {
+	// Close InfluxDB client resources
+	if s.influxClient != nil {
+		s.influxClient.Close()
+	}
+	return nil
 }
