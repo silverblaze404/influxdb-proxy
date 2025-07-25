@@ -60,6 +60,7 @@ type FilteringRules struct {
 	MaxShowSeriesLimit    int      `yaml:"max_show_series_limit"`
 	BlockedFunctions      []string `yaml:"blocked_functions"`
 	BlockedStatements     []string `yaml:"blocked_statements"`
+	AllowedMeasurements   []string `yaml:"allowed_measurements"`
 }
 
 // LoggingConfig contains logging settings

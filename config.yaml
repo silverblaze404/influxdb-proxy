@@ -31,6 +31,12 @@ proxy:
     block_expensive_shows: false       # Block SHOW SERIES without LIMIT
     max_show_series_limit: 10000       # Max LIMIT for SHOW SERIES queries
     
+    # Measurement-based filtering
+    allowed_measurements:              # If not empty, only allow queries on these measurements
+      # - "xd"                         # Example: allow queries on 'cpu' measurement
+      # - "memory"                     # Example: allow queries on 'memory' measurement
+      # - "disk"                       # Example: allow queries on 'disk' measurement
+    
     # Function/statement filtering
     blocked_functions:
       # - "count(*)"                   # Block count(*) without WHERE clause

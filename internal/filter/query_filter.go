@@ -65,6 +65,25 @@ func (qf *QueryFilter) ValidateQuery(queryString string) FilterResult {
 		}
 	}
 
+	// Check if any measurements in the query are in the allowed list
+	// If allowed_measurements is configured and the query contains only allowed measurements,
+	// bypass all other filtering
+	if len(qf.rules.AllowedMeasurements) > 0 {
+		measurements := qf.extractMeasurements(query)
+		// Only bypass filtering if:
+		// 1. The query contains measurements AND
+		// 2. All measurements are in the allowed list
+		if len(measurements) > 0 && qf.allMeasurementsAllowed(measurements) {
+			return FilterResult{
+				Allowed: true,
+				Reason:  "Query contains only allowed measurements - bypassing filters",
+				Query:   queryString,
+			}
+		}
+		// If allowed_measurements is configured but query doesn't match allowed measurements,
+		// or query has no measurements, apply normal filtering
+	}
+
 	// Check each statement in the query
 	for _, stmt := range query.Statements {
 		if result := qf.validateStatement(stmt, queryString); !result.Allowed {
@@ -88,6 +107,83 @@ func (qf *QueryFilter) ValidateQuery(queryString string) FilterResult {
 		Reason:  "Query passed all filters",
 		Query:   queryString,
 	}
+}
+
+// extractMeasurements extracts all measurement names from the parsed query
+func (qf *QueryFilter) extractMeasurements(query *influxql.Query) []string {
+	var measurements []string
+	measurementSet := make(map[string]bool) // Use map to avoid duplicates
+
+	for _, stmt := range query.Statements {
+		switch s := stmt.(type) {
+		case *influxql.SelectStatement:
+			// Extract measurements from Sources (including subqueries)
+			qf.extractMeasurementsFromSources(s.Sources, measurementSet)
+		case *influxql.ShowSeriesStatement:
+			// Extract measurement from SHOW SERIES FROM statement
+			if s.Sources != nil {
+				for _, source := range s.Sources {
+					if measurement, ok := source.(*influxql.Measurement); ok {
+						if measurement.Name != "" {
+							measurementSet[measurement.Name] = true
+						}
+					}
+				}
+			}
+		case *influxql.DeleteStatement:
+			// Extract measurement from DELETE statement
+			if s.Source != nil {
+				if measurement, ok := s.Source.(*influxql.Measurement); ok {
+					if measurement.Name != "" {
+						measurementSet[measurement.Name] = true
+					}
+				}
+			}
+		case *influxql.DeleteSeriesStatement:
+			// Extract measurements from DELETE FROM statement
+			for _, source := range s.Sources {
+				if measurement, ok := source.(*influxql.Measurement); ok {
+					if measurement.Name != "" {
+						measurementSet[measurement.Name] = true
+					}
+				}
+			}
+		case *influxql.DropMeasurementStatement:
+			// Extract measurement from DROP MEASUREMENT statement
+			if s.Name != "" {
+				measurementSet[s.Name] = true
+			}
+		}
+	}
+
+	// Convert map to slice
+	for measurement := range measurementSet {
+		measurements = append(measurements, measurement)
+	}
+
+	return measurements
+}
+
+// allMeasurementsAllowed checks if all measurements in the list are allowed
+func (qf *QueryFilter) allMeasurementsAllowed(measurements []string) bool {
+	if len(qf.rules.AllowedMeasurements) == 0 {
+		return false
+	}
+
+	// Create a map for faster lookup
+	allowedSet := make(map[string]bool)
+	for _, allowed := range qf.rules.AllowedMeasurements {
+		allowedSet[allowed] = true
+	}
+
+	// Check if all measurements are in the allowed set
+	for _, measurement := range measurements {
+		if !allowedSet[measurement] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (qf *QueryFilter) validateStatement(stmt influxql.Statement, queryString string) FilterResult {
@@ -472,4 +568,21 @@ func (qf *QueryFilter) isStatementAllowed(stmtType string) bool {
 
 	// Allow by default if not explicitly blocked
 	return true
+}
+
+// extractMeasurementsFromSources recursively extracts measurements from sources, including subqueries
+func (qf *QueryFilter) extractMeasurementsFromSources(sources influxql.Sources, measurementSet map[string]bool) {
+	for _, source := range sources {
+		switch s := source.(type) {
+		case *influxql.Measurement:
+			if s.Name != "" {
+				measurementSet[s.Name] = true
+			}
+		case *influxql.SubQuery:
+			// Recursively extract measurements from subquery
+			if s.Statement != nil {
+				qf.extractMeasurementsFromSources(s.Statement.Sources, measurementSet)
+			}
+		}
+	}
 }
