@@ -19,8 +19,7 @@ A Go-based proxy server for InfluxDB v1 that filters and rejects expensive queri
 Clone the repository:
 
 ```bash
-git clone https://github.com/greyorange-labs/gm-influxdb-proxy.git
-cd gm-influxdb-proxy
+git clone https://github.com/silverblaze404/influxdb-proxy.git
 ```
 
 Install dependencies:
