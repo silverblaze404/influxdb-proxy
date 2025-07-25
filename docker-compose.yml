@@ -16,7 +16,7 @@ services:
       - influxdb_data:/var/lib/influxdb
 
   proxy:
-    build: .
+    image: ranjan97/gm-influxdb-proxy:latest
     container_name: influxdb-proxy
     ports:
       - "8087:8087"
