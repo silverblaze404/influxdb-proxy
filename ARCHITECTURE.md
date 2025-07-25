@@ -14,20 +14,34 @@ The InfluxDB Proxy is a Go-based middleware server that sits between clients and
                              │
                              ▼
                     ┌─────────────────┐
-                    │ Query Filtering │
-                    │     Engine      |
-                    |  (Powered by    │
-                    │    InfluxQL)    │
+                    │ IP Whitelist    │
+                    │   Check         │
                     └─────────────────┘
                              │
                     ┌────────┴────────┐
                     │                 │
-                    ▼                 ▼
-              ┌──────────┐    ┌─────────────┐
-              │  Allow   │    │   Block &   │
-              │   and    │    │   Return    │
-              │ Forward  │    │   Error     │
-              └──────────┘    └─────────────┘
+                    ▼                 │
+              ┌──────────┐            │
+              │  Bypass  │            │
+              │   All    │            │
+              │ Filters  │            │
+              └──────────┘            │
+                                      ▼
+                             ┌─────────────────┐
+                             │ Query Filtering │
+                             │     Engine      │
+                             │  (Powered by    │
+                             │    InfluxQL)    │
+                             └─────────────────┘
+                                      │
+                             ┌────────┴────────┐
+                             │                 │
+                             ▼                 ▼
+                       ┌──────────┐    ┌─────────────┐
+                       │  Allow   │    │   Block &   │
+                       │   and    │    │   Return    │
+                       │ Forward  │    │   Error     │
+                       └──────────┘    └─────────────┘
 ```
 
 ## Core Components
@@ -75,17 +89,21 @@ Located in `internal/config/config.go`, configuration handles:
 ### Query Processing
 
 1. **Request Reception**: Client sends query to proxy on port 8087
-2. **Query Extraction**: Proxy extracts query string and database from request
-3. **Query Parsing**: InfluxDB's InfluxQL library parses and analyzes the query structure
-4. **Rule Validation**: Query filter applies configured rules:
+2. **IP Whitelist Check**: Check if client IP is in the whitelisted IPs list
+   - **If Whitelisted**: Skip all filtering rules and forward directly to InfluxDB
+   - **If Not Whitelisted**: Proceed to query filtering
+3. **Query Extraction**: Proxy extracts query string and database from request
+4. **Query Parsing**: InfluxDB's InfluxQL library parses and analyzes the query structure
+5. **Rule Validation**: Query filter applies configured rules:
    - Requires time filters
-   - Validates time range (max 7 days by default)
+   - Validates time range (max 30 days by default)
+   - Checks allowed measurements (if configured)
    - Blocks expensive operations
    - Blocks only statements explicitly listed in `blocked_statements`
-5. **Decision**:
+6. **Decision**:
    - **If Allowed**: Forward to InfluxDB and return response
    - **If Blocked**: Return HTTP 403 with error message
-6. **Metrics Update**: Track query statistics
+7. **Metrics Update**: Track query statistics
 
 ### Non-Query Processing
 
@@ -97,10 +115,15 @@ Located in `internal/config/config.go`, configuration handles:
 
 ### Query Protection
 
+- **IP Whitelisting**: Configurable IP addresses/CIDR ranges that bypass all filtering rules
 - **Time Filter Enforcement**: Blocks queries without WHERE time clauses
-- **Time Range Limits**: Prevents queries spanning excessive time periods
+- **Time Range Limits**: Prevents queries spanning excessive time periods (default: 30 days)
+- **Measurement Filtering**: Optional whitelist of allowed measurement names
 - **Statement Control**: Uses blacklist approach - blocks only explicitly configured statements
 - **Function Filtering**: Blocks expensive aggregation functions
+- **SHOW Series Control**: Configurable limits for SHOW SERIES queries
+- **Wildcard SELECT Protection**: Optional blocking of SELECT * without LIMIT
+- **GROUP BY Protection**: Optional blocking of unlimited GROUP BY queries
 
 ### Performance Optimization
 
@@ -121,8 +144,13 @@ Located in `internal/config/config.go`, configuration handles:
 The proxy is configured via `config.yaml` with these main sections:
 
 - **InfluxDB Connection**: Target database host, port and credentials
-- **Proxy Settings**: Port, host, and performance parameters
-- **Filtering Rules**: Query validation and blocking criteria
+- **Proxy Settings**: Port, host, timeout, and whitelisted IPs
+- **Performance Parameters**: Connection pooling and timeout settings
+- **Filtering Rules**: Query validation and blocking criteria including:
+  - Time-based filtering (require time filters, max time range)
+  - Performance filtering (wildcard SELECT, unlimited GROUP BY, expensive SHOW queries)
+  - Measurement-based filtering (allowed measurement whitelist)
+  - Function/statement filtering (blocked functions and statements)
 - **Logging**: Log level and format settings
 - **Metrics**: Enable/disable metrics collection
 
@@ -130,8 +158,10 @@ The proxy is configured via `config.yaml` with these main sections:
 
 - **Query Injection Protection**: InfluxDB's InfluxQL parser validates syntax and structure
 - **Resource Protection**: Prevents expensive queries that could impact performance
+- **IP-based Access Control**: Whitelisted IPs can bypass filtering rules for trusted sources
 - **Statement Restriction**: Blocks only explicitly configured statements (blacklist approach)
 - **Time-based Filtering**: Ensures queries are bounded to prevent full table scans
+- **Measurement Access Control**: Optional whitelist to restrict access to specific measurements
 
 ## Filtering Strategy
 
@@ -142,11 +172,13 @@ The proxy uses a **blacklist-based filtering approach** for statement control:
 - **Simple Logic**: If a statement type is in the blocked list → reject, otherwise → allow
 
 This approach provides:
+
 - **Simplicity**: Only one configuration list to manage
 - **Flexibility**: Easy to allow new statement types without configuration changes
 - **Intuitive Behavior**: Everything works unless explicitly blocked
 
 Example configuration:
+
 ```yaml
 filtering_rules:
   blocked_statements:
@@ -154,8 +186,6 @@ filtering_rules:
     - "CREATE"    # Block CREATE operations
   # All other statements (SELECT, SHOW, DROP, etc.) are automatically allowed
 ```
-
-## Configuration
 
 ## Deployment
 

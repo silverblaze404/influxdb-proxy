@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o influxdb-proxy cmd/proxy/main.go
+RUN CGO_ENABLED=0 go build -a -installsuffix cgo -o influxdb-proxy cmd/proxy/main.go
 
 # Final stage
 FROM alpine:latest
