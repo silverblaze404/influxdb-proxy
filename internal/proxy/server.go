@@ -125,6 +125,18 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		"client_ip": clientIP,
 	}).Debug("Processing query")
 
+	// Check if query filtering is disabled - if so, forward directly
+	if !s.config.IsQueryFilteringDisabled() {
+		log.WithFields(log.Fields{
+			"query":     query,
+			"client_ip": clientIP,
+		}).Debug("Query filtering disabled - forwarding directly")
+
+		atomic.AddInt64(&s.metrics.AllowedQueries, 1)
+		s.forwardToInfluxDB(w, r, clientIP)
+		return
+	}
+
 	// Check if client IP is whitelisted - if so, bypass filtering
 	if s.config.Proxy.IsIPWhitelisted(clientIP) {
 		log.WithFields(log.Fields{

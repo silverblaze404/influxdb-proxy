@@ -32,12 +32,13 @@ func (c *InfluxDBConfig) URL() string {
 
 // ProxyConfig contains proxy server settings
 type ProxyConfig struct {
-	Port            int               `yaml:"port"`
-	Host            string            `yaml:"host"`
-	MaxQueryTimeout int               `yaml:"max_query_timeout"` // seconds
-	WhitelistedIPs  []string          `yaml:"whitelisted_ips"`   // IPs that bypass filtering
-	FilteringRules  FilteringRules    `yaml:"filtering_rules"`
-	Performance     PerformanceConfig `yaml:"performance"`
+	Port                  int               `yaml:"port"`
+	Host                  string            `yaml:"host"`
+	MaxQueryTimeout       int               `yaml:"max_query_timeout"`       // seconds
+	WhitelistedIPs        []string          `yaml:"whitelisted_ips"`         // IPs that bypass filtering
+	DisableQueryFiltering bool              `yaml:"disable_query_filtering"` // Disable query filtering (default: false - filtering enabled)
+	FilteringRules        FilteringRules    `yaml:"filtering_rules"`
+	Performance           PerformanceConfig `yaml:"performance"`
 }
 
 // PerformanceConfig contains performance-related settings
@@ -173,4 +174,9 @@ func (p *ProxyConfig) IsIPWhitelisted(clientIP string) bool {
 	}
 
 	return false
+}
+
+// IsQueryFilteringDisabled returns true if query filtering is disabled
+func (c *Config) IsQueryFilteringDisabled() bool {
+	return c.Proxy.DisableQueryFiltering
 }
