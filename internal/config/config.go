@@ -177,6 +177,6 @@ func (p *ProxyConfig) IsIPWhitelisted(clientIP string) bool {
 }
 
 // IsQueryFilteringDisabled returns true if query filtering is disabled
-func (c *Config) IsQueryFilteringDisabled() bool {
-	return c.Proxy.DisableQueryFiltering
+func (p *ProxyConfig) IsQueryFilteringDisabled() bool {
+	return p.DisableQueryFiltering
 }

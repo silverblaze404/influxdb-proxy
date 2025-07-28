@@ -9,7 +9,7 @@ proxy:
   port: 8087
   host: "localhost"
   max_query_timeout: 30       # seconds
-  # disable_query_filtering:  false # Disable query filtering (default: false - filtering enabled)
+  # disable_query_filtering:  true # Disable query filtering (default: false - filtering enabled)
   whitelisted_ips:            # IPs that bypass all filtering rules
     # - "192.168.1.100"       # Example: specific IP
     # - "10.0.0.0/8"          # Example: CIDR range

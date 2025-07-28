@@ -126,7 +126,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}).Debug("Processing query")
 
 	// Check if query filtering is disabled - if so, forward directly
-	if !s.config.IsQueryFilteringDisabled() {
+	if s.config.Proxy.IsQueryFilteringDisabled() {
 		log.WithFields(log.Fields{
 			"query":     query,
 			"client_ip": clientIP,
