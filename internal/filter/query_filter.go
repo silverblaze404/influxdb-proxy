@@ -225,7 +225,7 @@ func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, q
 
 	// Check time range if time filter exists and max time range is configured
 	if qf.rules.MaxTimeRangeHours > 0 {
-		if timeRange := qf.extractTimeRange(stmt.Condition); timeRange != nil {
+		if timeRange := qf.extractTimeRangeFromStatement(stmt); timeRange != nil {
 			maxDuration := time.Duration(qf.rules.MaxTimeRangeHours) * time.Hour
 			actualDuration := timeRange.Duration()
 			if actualDuration > maxDuration {
@@ -360,6 +360,33 @@ func (qf *QueryFilter) extractTimeRange(condition influxql.Expr) *TimeRange {
 		return &TimeRange{Start: time.Unix(0, 0), End: end}
 	}
 
+	return nil
+}
+
+// extractTimeRangeFromStatement extracts time range from a SELECT statement, including subqueries
+func (qf *QueryFilter) extractTimeRangeFromStatement(stmt *influxql.SelectStatement) *TimeRange {
+	// Check the main WHERE clause first
+	if timeRange := qf.extractTimeRange(stmt.Condition); timeRange != nil {
+		return timeRange
+	}
+
+	// Check subqueries in the FROM clause
+	return qf.extractTimeRangeFromSources(stmt.Sources)
+}
+
+// extractTimeRangeFromSources recursively extracts time ranges from sources, including subqueries
+func (qf *QueryFilter) extractTimeRangeFromSources(sources influxql.Sources) *TimeRange {
+	for _, source := range sources {
+		switch s := source.(type) {
+		case *influxql.SubQuery:
+			if s.Statement != nil {
+				// Recursively check the subquery
+				if timeRange := qf.extractTimeRangeFromStatement(s.Statement); timeRange != nil {
+					return timeRange
+				}
+			}
+		}
+	}
 	return nil
 }
 

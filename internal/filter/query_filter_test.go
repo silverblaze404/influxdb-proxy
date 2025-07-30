@@ -134,6 +134,16 @@ func TestQueryFilter_TimeRange(t *testing.T) {
 			query:    "SELECT value FROM mymeasurement WHERE time > 1750617000000000000 AND time < 1751826600000000000 LIMIT 1",
 			expected: false,
 		},
+		{
+			name:     "Time range with 90d should exceed 1 hour limit",
+			query:    "SELECT COUNT(DISTINCT(pps_id)) FROM pps_data WHERE time > now() - 90d AND installation_id =~ /^qa3-adisinglebulkqa300$/ AND mode = 'pick' AND front_logged_in = 'true' AND status = 'open'",
+			expected: false,
+		},
+		{
+			name:     "Subquery with 90d time range should exceed 1 hour limit",
+			query:    "SELECT sum(\"last_total\") FROM (SELECT last(\"total_entities\") AS \"last_total\" FROM \"outstanding_orders\" WHERE time > now() - 90d GROUP BY \"bin_tags\", \"status\")",
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {
