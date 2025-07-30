@@ -10,7 +10,7 @@ import (
 	"github.com/influxdata/influxql"
 	log "github.com/sirupsen/logrus"
 
-	"gm-influxdb-proxy/internal/config"
+	"influxdb-proxy/internal/config"
 )
 
 // QueryFilter validates and filters InfluxDB queries

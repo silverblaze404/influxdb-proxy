@@ -13,7 +13,7 @@ const custom_logo = `
                                     Version %s                                                                     
 `
 
-// Display shows the GM InfluxDB Proxy trademark banner with version information
+// Display shows the InfluxDB Proxy trademark banner with version information
 func Display(version string) {
 
 	// Add some spacing for clean presentation
@@ -24,7 +24,7 @@ func Display(version string) {
 
 	// Add some spacing and additional info
 	fmt.Printf("\033[33m%s\033[0m\n", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━") // Yellow separator
-	fmt.Printf("\033[32m%s\033[0m\n", "🚀 Starting GM InfluxDB Proxy™ - InfluxDB proxy with advanced query filtering")
+	fmt.Printf("\033[32m%s\033[0m\n", "🚀 Starting InfluxDB Proxy with advanced query filtering")
 	fmt.Printf("\033[33m%s\033[0m\n\n", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━") // Yellow separator
 }
 

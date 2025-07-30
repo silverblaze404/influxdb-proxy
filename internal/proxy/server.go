@@ -15,9 +15,9 @@ import (
 	"github.com/realclientip/realclientip-go"
 	log "github.com/sirupsen/logrus"
 
-	"gm-influxdb-proxy/internal/config"
-	"gm-influxdb-proxy/internal/filter"
-	"gm-influxdb-proxy/internal/influxdb"
+	"influxdb-proxy/internal/config"
+	"influxdb-proxy/internal/filter"
+	"influxdb-proxy/internal/influxdb"
 )
 
 // Server represents the proxy server
@@ -43,12 +43,13 @@ type ErrorResponse struct {
 
 // NewServer creates a new proxy server
 func NewServer(cfg *config.Config) (*Server, error) {
-	// Create InfluxDB client
+	// Create InfluxDB client with performance configuration
 	influxClient := influxdb.NewClient(
 		cfg.InfluxDB.URL(),
 		cfg.InfluxDB.Username,
 		cfg.InfluxDB.Password,
-		time.Duration(cfg.Proxy.MaxQueryTimeout)*time.Second,
+		time.Duration(cfg.Proxy.InfluxDBClient.TimeoutSeconds)*time.Second,
+		cfg.Proxy.InfluxDBClient,
 	)
 
 	// Test connection to InfluxDB
@@ -110,12 +111,22 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	query, _, err := s.extractQuery(r)
 	if err != nil {
 		atomic.AddInt64(&s.metrics.Errors, 1)
+		log.WithError(err).WithFields(log.Fields{
+			"client_ip": clientIP,
+			"method":    r.Method,
+			"path":      r.URL.Path,
+		}).Error("Failed to extract query from request")
 		s.sendError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request: %v", err))
 		return
 	}
 
 	if query == "" {
 		atomic.AddInt64(&s.metrics.Errors, 1)
+		log.WithFields(log.Fields{
+			"client_ip": clientIP,
+			"method":    r.Method,
+			"path":      r.URL.Path,
+		}).Warn("Request missing required query parameter 'q'")
 		s.sendError(w, http.StatusBadRequest, "Query parameter 'q' is required")
 		return
 	}
@@ -123,7 +134,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	log.WithFields(log.Fields{
 		"query":     query,
 		"client_ip": clientIP,
-	}).Debug("Processing query")
+	}).Info("Processing query")
 
 	// Check if query filtering is disabled - if so, forward directly
 	if s.config.Proxy.IsQueryFilteringDisabled() {
@@ -157,7 +168,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 			"query":     query,
 			"reason":    result.Reason,
 			"client_ip": clientIP,
-		}).Info("Query blocked")
+		}).Info("Query blocked by filtering rules")
 
 		s.sendError(w, http.StatusForbidden, fmt.Sprintf("Query blocked: %s", result.Reason))
 		return
@@ -279,7 +290,7 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 		// Parse form data from the body bytes
 		values, err := url.ParseQuery(string(bodyBytes))
 		if err != nil {
-			return "", "", fmt.Errorf("failed to parse form: %w", err)
+			return "", "", fmt.Errorf("failed to parse form-encoded request body: %w", err)
 		}
 		return values.Get("q"), values.Get("db"), nil
 	}
@@ -291,7 +302,7 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 			Database string `json:"db"`
 		}
 		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&req); err != nil {
-			return "", "", fmt.Errorf("failed to parse JSON: %w", err)
+			return "", "", fmt.Errorf("failed to parse JSON request body: %w", err)
 		}
 		return req.Query, req.Database, nil
 	}
@@ -299,7 +310,7 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 	// Default to form parsing for backward compatibility
 	values, err := url.ParseQuery(string(bodyBytes))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse form: %w", err)
+		return "", "", fmt.Errorf("failed to parse request body as form data: %w", err)
 	}
 	return values.Get("q"), values.Get("db"), nil
 }

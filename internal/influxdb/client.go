@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"time"
 
+	"influxdb-proxy/internal/config"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -20,19 +22,18 @@ type Client struct {
 }
 
 // NewClient creates a new InfluxDB client
-func NewClient(baseURL, username, password string, timeout time.Duration) *Client {
-	// Configure HTTP client for high concurrency and performance
+func NewClient(baseURL, username, password string, timeout time.Duration, clientConfig config.InfluxDBClientConfig) *Client {
+	// Configure HTTP client for single InfluxDB host with optimized connection pooling
 	transport := &http.Transport{
-		MaxIdleConns:          200,              // Total idle connections across all hosts
-		MaxIdleConnsPerHost:   50,               // Idle connections per host (increased)
-		MaxConnsPerHost:       100,              // Max connections per host (doubled)
-		IdleConnTimeout:       90 * time.Second, // Keep connections alive
-		DisableCompression:    true,             // Disable compression for better performance
-		TLSHandshakeTimeout:   10 * time.Second, // TLS handshake timeout
-		ExpectContinueTimeout: 1 * time.Second,  // Expect: 100-continue timeout
-		ResponseHeaderTimeout: 30 * time.Second, // Header read timeout
-		DisableKeepAlives:     false,            // Enable keep-alive
-		ForceAttemptHTTP2:     false,            // Stick to HTTP/1.1 for better connection reuse
+		MaxIdleConns:          clientConfig.IdleConnectionPoolSize,                          // Global idle connection limit
+		MaxConnsPerHost:       clientConfig.MaxConcurrentConnections,                        // Total connections per host (single host)
+		IdleConnTimeout:       time.Duration(clientConfig.IdleTimeoutSeconds) * time.Second, // From config
+		DisableCompression:    true,                                                         // Disable compression for better performance
+		TLSHandshakeTimeout:   10 * time.Second,                                             // TLS handshake timeout
+		ExpectContinueTimeout: 1 * time.Second,                                              // Expect: 100-continue timeout
+		ResponseHeaderTimeout: time.Duration(clientConfig.ReadTimeoutSeconds) * time.Second, // From config
+		DisableKeepAlives:     false,                                                        // Enable keep-alive
+		ForceAttemptHTTP2:     false,                                                        // Stick to HTTP/1.1 for better connection reuse
 	}
 
 	return &Client{
@@ -77,7 +78,7 @@ func (c *Client) ForwardRequest(r *http.Request) (*http.Response, error) {
 		body = r.Body
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, u.String(), body)
+	req, err := http.NewRequest(r.Method, u.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -90,9 +91,10 @@ func (c *Client) ForwardRequest(r *http.Request) (*http.Response, error) {
 	}
 
 	log.WithFields(log.Fields{
-		"method": r.Method,
-		"url":    u.String(),
-		"path":   r.URL.Path,
+		"method":  r.Method,
+		"url":     u.String(),
+		"path":    r.URL.Path,
+		"timeout": c.httpClient.Timeout,
 	}).Debug("Forwarding request to InfluxDB")
 
 	// Execute the request

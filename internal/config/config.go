@@ -32,23 +32,29 @@ func (c *InfluxDBConfig) URL() string {
 
 // ProxyConfig contains proxy server settings
 type ProxyConfig struct {
-	Port                  int               `yaml:"port"`
-	Host                  string            `yaml:"host"`
-	MaxQueryTimeout       int               `yaml:"max_query_timeout"`       // seconds
-	WhitelistedIPs        []string          `yaml:"whitelisted_ips"`         // IPs that bypass filtering
-	DisableQueryFiltering bool              `yaml:"disable_query_filtering"` // Disable query filtering (default: false - filtering enabled)
-	FilteringRules        FilteringRules    `yaml:"filtering_rules"`
-	Performance           PerformanceConfig `yaml:"performance"`
+	Port                  int                  `yaml:"port"`
+	Host                  string               `yaml:"host"`
+	WhitelistedIPs        []string             `yaml:"whitelisted_ips"`         // IPs that bypass filtering
+	DisableQueryFiltering bool                 `yaml:"disable_query_filtering"` // Disable query filtering (default: false - filtering enabled)
+	FilteringRules        FilteringRules       `yaml:"filtering_rules"`
+	InfluxDBClient        InfluxDBClientConfig `yaml:"influxdb_client"`
+	ServerTimeouts        ServerTimeouts       `yaml:"server_timeouts"`
 }
 
-// PerformanceConfig contains performance-related settings
-type PerformanceConfig struct {
-	MaxIdleConns        int `yaml:"max_idle_conns"`          // Default: 200
-	MaxIdleConnsPerHost int `yaml:"max_idle_conns_per_host"` // Default: 50
-	MaxConnsPerHost     int `yaml:"max_conns_per_host"`      // Default: 100
-	ReadTimeoutSeconds  int `yaml:"read_timeout_seconds"`    // Default: 30
-	WriteTimeoutSeconds int `yaml:"write_timeout_seconds"`   // Default: 120
-	IdleTimeoutSeconds  int `yaml:"idle_timeout_seconds"`    // Default: 120
+// ServerTimeouts contains HTTP server timeout settings
+type ServerTimeouts struct {
+	ReadTimeoutSeconds  int `yaml:"read_timeout_seconds"`  // Default: 2x InfluxDB client read timeout
+	WriteTimeoutSeconds int `yaml:"write_timeout_seconds"` // Default: 2x InfluxDB client write timeout
+	IdleTimeoutSeconds  int `yaml:"idle_timeout_seconds"`  // Default: 2x InfluxDB client idle timeout
+}
+
+// InfluxDBClientConfig contains InfluxDB HTTP client performance-related settings
+type InfluxDBClientConfig struct {
+	TimeoutSeconds           int `yaml:"timeout_seconds"`            // Max timeout (default: 30 seconds)
+	IdleConnectionPoolSize   int `yaml:"idle_connection_pool_size"`  // How many idle connections to keep (default: 200)
+	MaxConcurrentConnections int `yaml:"max_concurrent_connections"` // Max active connections (default: 400)
+	ReadTimeoutSeconds       int `yaml:"read_timeout_seconds"`       // Default: 30
+	IdleTimeoutSeconds       int `yaml:"idle_timeout_seconds"`       // Default: 120
 }
 
 // FilteringRules contains configurable query filtering options
@@ -106,23 +112,50 @@ func setDefaults(config *Config) {
 	if config.Proxy.Port == 0 {
 		config.Proxy.Port = 8087
 	}
-	if config.Proxy.MaxQueryTimeout == 0 {
-		config.Proxy.MaxQueryTimeout = 30 // 30 seconds
-	}
 	if config.Logging.Level == "" {
 		config.Logging.Level = "info"
 	}
 	if config.Logging.Format == "" {
-		config.Logging.Format = "text"
+		config.Logging.Format = "json"
 	}
 	if config.Metrics.Path == "" {
-		config.Metrics.Path = "/metrics"
+		config.Metrics.Path = "/proxy_metrics"
+	}
+
+	// Set InfluxDB client defaults
+	client := &config.Proxy.InfluxDBClient
+	if client.TimeoutSeconds == 0 {
+		client.TimeoutSeconds = 120
+	}
+	if client.IdleConnectionPoolSize == 0 {
+		client.IdleConnectionPoolSize = 200
+	}
+	if client.MaxConcurrentConnections == 0 {
+		client.MaxConcurrentConnections = 400
+	}
+	if client.ReadTimeoutSeconds == 0 {
+		client.ReadTimeoutSeconds = 60
+	}
+	if client.IdleTimeoutSeconds == 0 {
+		client.IdleTimeoutSeconds = 120
+	}
+
+	// Set server timeout defaults (2x client timeouts for safety margin)
+	serverTimeouts := &config.Proxy.ServerTimeouts
+	if serverTimeouts.ReadTimeoutSeconds == 0 {
+		serverTimeouts.ReadTimeoutSeconds = client.ReadTimeoutSeconds * 2
+	}
+	if serverTimeouts.WriteTimeoutSeconds == 0 {
+		serverTimeouts.WriteTimeoutSeconds = 120
+	}
+	if serverTimeouts.IdleTimeoutSeconds == 0 {
+		serverTimeouts.IdleTimeoutSeconds = client.IdleTimeoutSeconds * 2
 	}
 
 	// Set filtering rule defaults
 	rules := &config.Proxy.FilteringRules
 	if rules.MaxTimeRangeHours == 0 {
-		rules.MaxTimeRangeHours = 168 // 7 days
+		rules.MaxTimeRangeHours = 720 // 30 days
 	}
 	if rules.MaxShowSeriesLimit == 0 {
 		rules.MaxShowSeriesLimit = 10000
@@ -139,8 +172,35 @@ func validate(config *Config) error {
 	if config.Proxy.Port < 1 || config.Proxy.Port > 65535 {
 		return fmt.Errorf("proxy.port must be between 1 and 65535")
 	}
-	if config.Proxy.FilteringRules.MaxTimeRangeHours < 1 {
+	if config.Proxy.FilteringRules.MaxTimeRangeHours < 0 {
 		return fmt.Errorf("filtering_rules.max_time_range_hours must be positive")
+	}
+	if config.Proxy.FilteringRules.MaxShowSeriesLimit < 0 {
+		return fmt.Errorf("filtering_rules.max_show_series_limit must be positive")
+	}
+	if config.Proxy.InfluxDBClient.TimeoutSeconds < 0 {
+		return fmt.Errorf("influxdb_client.timeout_seconds must be positive")
+	}
+	if config.Proxy.InfluxDBClient.IdleConnectionPoolSize < 0 {
+		return fmt.Errorf("influxdb_client.idle_connection_pool_size must be positive")
+	}
+	if config.Proxy.InfluxDBClient.MaxConcurrentConnections < 0 {
+		return fmt.Errorf("influxdb_client.max_concurrent_connections must be positive")
+	}
+	if config.Proxy.InfluxDBClient.ReadTimeoutSeconds < 0 {
+		return fmt.Errorf("influxdb_client.read_timeout_seconds must be positive")
+	}
+	if config.Proxy.InfluxDBClient.IdleTimeoutSeconds < 0 {
+		return fmt.Errorf("influxdb_client.idle_timeout_seconds must be positive")
+	}
+	if config.Proxy.ServerTimeouts.ReadTimeoutSeconds < 0 {
+		return fmt.Errorf("server_timeouts.read_timeout_seconds must be positive")
+	}
+	if config.Proxy.ServerTimeouts.WriteTimeoutSeconds < 0 {
+		return fmt.Errorf("server_timeouts.write_timeout_seconds must be positive")
+	}
+	if config.Proxy.ServerTimeouts.IdleTimeoutSeconds < 0 {
+		return fmt.Errorf("server_timeouts.idle_timeout_seconds must be positive")
 	}
 	return nil
 }

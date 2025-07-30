@@ -1,4 +1,4 @@
-module gm-influxdb-proxy
+module influxdb-proxy
 
 go 1.24.5
 

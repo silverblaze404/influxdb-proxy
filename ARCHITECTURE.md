@@ -81,7 +81,7 @@ Located in `internal/config/config.go`, configuration handles:
 
 - **YAML Configuration**: Loads settings from `config.yaml`
 - **Filtering Rules**: Configurable query filtering parameters
-- **Performance Tuning**: HTTP client and server optimization settings
+- **InfluxDB Client Configuration**: HTTP client optimization settings for connecting to InfluxDB
 - **Logging Settings**: Structured logging configuration
 
 ## Request Flow
@@ -125,12 +125,12 @@ Located in `internal/config/config.go`, configuration handles:
 - **Wildcard SELECT Protection**: Optional blocking of SELECT * without LIMIT
 - **GROUP BY Protection**: Optional blocking of unlimited GROUP BY queries
 
-### Performance Optimization
+### InfluxDB Client Optimization
 
-- **Connection Pooling**: Efficient HTTP client with connection reuse
-- **Concurrent Processing**: Handles multiple queries simultaneously
-- **Timeout Management**: Configurable query timeouts
-- **Keep-Alive**: Maintains persistent connections to InfluxDB
+- **Connection Pooling**: Configurable idle connection pool optimized for single InfluxDB host
+- **Concurrent Processing**: Handles multiple queries simultaneously with tunable connection limits
+- **Timeout Management**: Configurable read, write, and idle timeouts for InfluxDB connections
+- **Keep-Alive**: Maintains persistent connections to InfluxDB with configurable idle timeout
 
 ### Monitoring & Observability
 
@@ -144,13 +144,15 @@ Located in `internal/config/config.go`, configuration handles:
 The proxy is configured via `config.yaml` with these main sections:
 
 - **InfluxDB Connection**: Target database host, port and credentials
-- **Proxy Settings**: Port, host, timeout, and whitelisted IPs
-- **Performance Parameters**: Connection pooling and timeout settings
+- **Proxy Settings**: Port, host, timeout, whitelisted IPs, and query filtering controls
+- **InfluxDB Client Parameters**: Connection pooling and timeout settings optimized for single-host InfluxDB connections
+- **Server Timeout Parameters**: HTTP server timeout configuration with smart defaults (2x client timeouts)
 - **Filtering Rules**: Query validation and blocking criteria including:
   - Time-based filtering (require time filters, max time range)
   - Performance filtering (wildcard SELECT, unlimited GROUP BY, expensive SHOW queries)
   - Measurement-based filtering (allowed measurement whitelist)
   - Function/statement filtering (blocked functions and statements)
+- **Query Filtering Control**: Global disable option (`disable_query_filtering`) to bypass all filtering
 - **Logging**: Log level and format settings
 - **Metrics**: Enable/disable metrics collection
 

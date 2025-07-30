@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gm-influxdb-proxy/internal/config"
+	"influxdb-proxy/internal/config"
 
 	"github.com/influxdata/influxql"
 )

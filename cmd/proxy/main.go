@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"gm-influxdb-proxy/internal/banner"
-	"gm-influxdb-proxy/internal/config"
-	"gm-influxdb-proxy/internal/proxy"
+	"influxdb-proxy/internal/banner"
+	"influxdb-proxy/internal/config"
+	"influxdb-proxy/internal/proxy"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -58,15 +58,22 @@ func main() {
 		log.Fatalf("Failed to create proxy server: %v", err)
 	}
 
-	// Setup HTTP server with optimized settings for high concurrency
+	// Setup HTTP server with configurable timeout settings
 	addr := fmt.Sprintf("%s:%d", cfg.Proxy.Host, cfg.Proxy.Port)
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      proxyServer.Handler(),
-		ReadTimeout:  30 * time.Second,  // Time to read request
-		WriteTimeout: 120 * time.Second, // Time to write response (increased for large responses)
-		IdleTimeout:  120 * time.Second, // Keep-alive timeout (increased)
+		Addr:              addr,
+		Handler:           proxyServer.Handler(),
+		ReadHeaderTimeout: time.Duration(cfg.Proxy.ServerTimeouts.ReadTimeoutSeconds) * time.Second,
+		WriteTimeout:      time.Duration(cfg.Proxy.ServerTimeouts.WriteTimeoutSeconds) * time.Second,
+		IdleTimeout:       time.Duration(cfg.Proxy.ServerTimeouts.IdleTimeoutSeconds) * time.Second,
 	}
+
+	log.WithFields(log.Fields{
+		"address":       addr,
+		"read_timeout":  server.ReadTimeout,
+		"write_timeout": server.WriteTimeout,
+		"idle_timeout":  server.IdleTimeout,
+	}).Info("HTTP server configured with timeout settings")
 
 	// Start server in a goroutine
 	go func() {

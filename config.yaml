@@ -8,19 +8,21 @@ influxdb:
 proxy:
   port: 8087
   host: "localhost"
-  max_query_timeout: 30       # seconds
   # disable_query_filtering:  true # Disable query filtering (default: false - filtering enabled)
   whitelisted_ips:            # IPs that bypass all filtering rules
     # - "192.168.1.100"       # Example: specific IP
     # - "10.0.0.0/8"          # Example: CIDR range
     # - "127.0.0.1"           # Example: localhost
-  performance:
-    max_idle_conns: 200           # Total idle connections to InfluxDB
-    max_idle_conns_per_host: 50   # Idle connections per InfluxDB host
-    max_conns_per_host: 100       # Max concurrent connections per InfluxDB host
-    read_timeout_seconds: 30      # HTTP read timeout
-    write_timeout_seconds: 120    # HTTP write timeout (for large responses)
-    idle_timeout_seconds: 120     # HTTP idle timeout (keep-alive)
+  influxdb_client:
+    timeout_seconds: 120              # Max query timeout (default: 120 seconds)
+    idle_connection_pool_size: 200    # How many idle connections to keep to InfluxDB
+    max_concurrent_connections: 400   # Max active connections to InfluxDB
+    read_timeout_seconds: 60          # HTTP read timeout
+    idle_timeout_seconds: 120         # HTTP idle timeout (keep-alive)
+  server_timeouts:                    # HTTP server timeout settings (defaults to 2x client timeouts)
+    # read_timeout_seconds: 60    # Server read timeout (default: 2x client read timeout)
+    # write_timeout_seconds: 240  # Server write timeout (default: 2x client write timeout)  
+    # idle_timeout_seconds: 240   # Server idle timeout (default: 2x client idle timeout)
   filtering_rules:
     # Time-based filtering
     require_time_filter: true
@@ -34,7 +36,7 @@ proxy:
     
     # Measurement-based filtering
     allowed_measurements:              # If not empty, only allow queries on these measurements
-      # - "xd"                         # Example: allow queries on 'cpu' measurement
+      # - "cpu"                        # Example: allow queries on 'cpu' measurement
       # - "memory"                     # Example: allow queries on 'memory' measurement
       # - "disk"                       # Example: allow queries on 'disk' measurement
     
@@ -43,7 +45,7 @@ proxy:
       # - "count(*)"                   # Block count(*) without WHERE clause
     blocked_statements:
       - "DELETE"                      # Block DELETE statements
-      - "DROP"                        # Block DROP statements
+      # - "DROP"                      # Block DROP statements
 
 logging:
   level: "info"

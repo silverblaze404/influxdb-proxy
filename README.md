@@ -19,8 +19,8 @@ A Go-based proxy server for InfluxDB v1 that filters and rejects expensive queri
 Clone the repository:
 
 ```bash
-git clone https://github.com/greyorange-labs/gm-influxdb-proxy.git
-cd gm-influxdb-proxy
+git clone https://github.com/greyorange-labs/influxdb-proxy.git
+cd influxdb-proxy
 ```
 
 Install dependencies:
@@ -42,18 +42,20 @@ influxdb:
 proxy:
   port: 8087
   host: "localhost"
-  max_query_timeout: 30       # seconds
   whitelisted_ips:            # IPs that bypass all filtering rules
     # - "192.168.1.100"       # Example: specific IP
     # - "10.0.0.0/8"          # Example: CIDR range
     # - "127.0.0.1"           # Example: localhost
-  performance:
-    max_idle_conns: 200           # Total idle connections to InfluxDB
-    max_idle_conns_per_host: 50   # Idle connections per InfluxDB host
-    max_conns_per_host: 100       # Max concurrent connections per InfluxDB host
-    read_timeout_seconds: 30      # HTTP read timeout
-    write_timeout_seconds: 120    # HTTP write timeout (for large responses)
-    idle_timeout_seconds: 120     # HTTP idle timeout (keep-alive)
+  influxdb_client:
+    timeout_seconds: 120              # Max timeout (default: 120 seconds)
+    idle_connection_pool_size: 200    # How many idle connections to keep to InfluxDB
+    max_concurrent_connections: 400   # Max active connections to InfluxDB
+    read_timeout_seconds: 60          # HTTP read timeout
+    idle_timeout_seconds: 120         # HTTP idle timeout (keep-alive)
+  server_timeouts:                    # HTTP server timeout settings (defaults to 2x client timeouts)
+    # read_timeout_seconds: 60    # Server read timeout (default: 2x client read timeout)
+    # write_timeout_seconds: 240  # Server write timeout (default: 2x client write timeout)  
+    # idle_timeout_seconds: 240   # Server idle timeout (default: 2x client idle timeout)
   filtering_rules:
     # Time-based filtering
     require_time_filter: true
@@ -108,17 +110,22 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 
 - `proxy.port`: Port for the proxy server (default: 8087)
 - `proxy.host`: Host interface to bind to (default: "localhost")
-- `proxy.max_query_timeout`: Maximum query timeout in seconds
+- `proxy.disable_query_filtering`: Disable all query filtering (default: false)
 - `proxy.whitelisted_ips`: List of IP addresses/CIDR ranges that bypass all filtering rules
 
-### Performance Tuning
+### InfluxDB Client Configuration
 
-- `proxy.performance.max_idle_conns`: Total idle connections to InfluxDB
-- `proxy.performance.max_idle_conns_per_host`: Idle connections per InfluxDB host
-- `proxy.performance.max_conns_per_host`: Max concurrent connections per host
-- `proxy.performance.read_timeout_seconds`: HTTP read timeout for requests
-- `proxy.performance.write_timeout_seconds`: HTTP write timeout for large responses
-- `proxy.performance.idle_timeout_seconds`: HTTP idle timeout for keep-alive connections
+- `proxy.influxdb_client.timeout_seconds`: Maximum timeout in seconds (default: 120)
+- `proxy.influxdb_client.idle_connection_pool_size`: Number of idle connections to keep to InfluxDB (default: 200)
+- `proxy.influxdb_client.max_concurrent_connections`: Maximum active connections to InfluxDB (default: 400)
+- `proxy.influxdb_client.read_timeout_seconds`: HTTP read timeout for requests (default: 60)
+- `proxy.influxdb_client.idle_timeout_seconds`: HTTP idle timeout for keep-alive connections (default: 120)
+
+### Server Timeout Configuration
+
+- `proxy.server_timeouts.read_timeout_seconds`: HTTP server read timeout (default: 2x InfluxDB client read timeout)
+- `proxy.server_timeouts.write_timeout_seconds`: HTTP server write timeout (default: 2x InfluxDB client write timeout)
+- `proxy.server_timeouts.idle_timeout_seconds`: HTTP server idle timeout (default: 2x InfluxDB client idle timeout)
 
 ### Filtering Rules
 
@@ -136,6 +143,10 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 
 - `logging.level`: Log level (debug, info, warn, error)
 - `logging.format`: Log format (json or text)
+
+### Metrics
+
+- `metrics.enabled`: Enable/disable metrics collection (endpoint: /proxy_metrics)
 
 ## API Endpoints
 
