@@ -25,8 +25,9 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/influxdb-proxy .
 
-# Copy default config
+# Copy default config and filtering rules
 COPY config.yaml .
+COPY filtering_rules.yaml .
 
 # Expose port
 EXPOSE 8087

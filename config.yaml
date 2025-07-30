@@ -1,3 +1,4 @@
+### InfluxDB connection settings
 influxdb:
   host: "localhost"
   port: 8086
@@ -5,51 +6,52 @@ influxdb:
   password: ""
   database: ""
 
+### Proxy server configuration
 proxy:
   port: 8087
   host: "localhost"
-  # disable_query_filtering:  true # Disable query filtering (default: false - filtering enabled)
-  whitelisted_ips:            # IPs that bypass all filtering rules
+  
+  ## Query filtering settings
+
+  # Disable query filtering (default: false - filtering enabled)
+  # If set to true, all filtering rules will be ignored
+  disable_query_filtering: false
+
+  # Path to external filtering rules file
+  # If specified, this file will be loaded for filtering rules
+  # If not specified, inline filtering rules will be used
+  filtering_rules_file: "filtering_rules.yaml"
+  
+# filtering_rules:
+  # require_time_filter: true
+  # max_time_range_hours: 720
+  
+  # IPs that bypass all filtering rules
+  whitelisted_ips:
     # - "192.168.1.100"       # Example: specific IP
     # - "10.0.0.0/8"          # Example: CIDR range
     # - "127.0.0.1"           # Example: localhost
+  
+  ## InfluxDB client connection settings
   influxdb_client:
     timeout_seconds: 120              # Max query timeout (default: 120 seconds)
     idle_connection_pool_size: 200    # How many idle connections to keep to InfluxDB
     max_concurrent_connections: 400   # Max active connections to InfluxDB
     read_timeout_seconds: 60          # HTTP read timeout
     idle_timeout_seconds: 120         # HTTP idle timeout (keep-alive)
-  server_timeouts:                    # HTTP server timeout settings (defaults to 2x client timeouts)
-    # read_timeout_seconds: 60    # Server read timeout (default: 2x client read timeout)
-    # write_timeout_seconds: 240  # Server write timeout (default: 2x client write timeout)  
-    # idle_timeout_seconds: 240   # Server idle timeout (default: 2x client idle timeout)
-  filtering_rules:
-    # Time-based filtering
-    require_time_filter: true
-    max_time_range_hours: 720          # 30 days max time range
+  
+  ## HTTP server timeout settings (defaults to 2x client timeouts)
+  server_timeouts:
+    # read_timeout_seconds: 60        # Server read timeout (default: 2x client read timeout)
+    # write_timeout_seconds: 240      # Server write timeout (default: 2x client write timeout)  
+    # idle_timeout_seconds: 240       # Server idle timeout (default: 2x client idle timeout)
 
-    # Performance filtering
-    block_wildcard_select: false       # Block SELECT * without LIMIT
-    block_unlimited_group_by: false    # Block GROUP BY without LIMIT or time bucketing
-    block_expensive_shows: false       # Block SHOW SERIES without LIMIT
-    max_show_series_limit: 10000       # Max LIMIT for SHOW SERIES queries
-    
-    # Measurement-based filtering
-    allowed_measurements:              # If not empty, only allow queries on these measurements
-      # - "cpu"                        # Example: allow queries on 'cpu' measurement
-      # - "memory"                     # Example: allow queries on 'memory' measurement
-      # - "disk"                       # Example: allow queries on 'disk' measurement
-    
-    # Function/statement filtering
-    blocked_functions:
-      # - "count(*)"                   # Block count(*) without WHERE clause
-    blocked_statements:
-      - "DELETE"                      # Block DELETE statements
-      # - "DROP"                      # Block DROP statements
 
+### Logging configuration
 logging:
   level: "info"
   format: "json"  # json or text
 
+### Metrics configuration
 metrics:
   enabled: true

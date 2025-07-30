@@ -24,6 +24,7 @@ services:
       - CONFIG_FILE=/app/config.yaml
     volumes:
       - ./config.yaml:/app/config.yaml
+      - ./filtering_rules.yaml:/app/filtering_rules.yaml
     depends_on:
       - influxdb
     command: ["/app/influxdb-proxy", "-config", "/app/config.yaml"]

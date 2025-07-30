@@ -36,6 +36,7 @@ type ProxyConfig struct {
 	Host                  string               `yaml:"host"`
 	WhitelistedIPs        []string             `yaml:"whitelisted_ips"`         // IPs that bypass filtering
 	DisableQueryFiltering bool                 `yaml:"disable_query_filtering"` // Disable query filtering (default: false - filtering enabled)
+	FilteringRulesFile    string               `yaml:"filtering_rules_file"`    // Path to external filtering rules file
 	FilteringRules        FilteringRules       `yaml:"filtering_rules"`
 	InfluxDBClient        InfluxDBClientConfig `yaml:"influxdb_client"`
 	ServerTimeouts        ServerTimeouts       `yaml:"server_timeouts"`
@@ -94,6 +95,13 @@ func Load(filename string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	// Load external filtering rules if specified
+	if config.Proxy.FilteringRulesFile != "" {
+		if err := loadExternalFilteringRules(&config, config.Proxy.FilteringRulesFile); err != nil {
+			return nil, fmt.Errorf("failed to load external filtering rules: %w", err)
+		}
+	}
+
 	// Set defaults
 	setDefaults(&config)
 
@@ -103,6 +111,24 @@ func Load(filename string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// loadExternalFilteringRules loads filtering rules from an external YAML file
+func loadExternalFilteringRules(config *Config, filename string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read filtering rules file %s: %w", filename, err)
+	}
+
+	var rules FilteringRules
+	if err := yaml.Unmarshal(data, &rules); err != nil {
+		return fmt.Errorf("failed to parse filtering rules file %s: %w", filename, err)
+	}
+
+	// Override the filtering rules in the main config
+	// External file takes precedence over inline rules
+	config.Proxy.FilteringRules = rules
+	return nil
 }
 
 func setDefaults(config *Config) {
