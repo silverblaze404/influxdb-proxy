@@ -46,6 +46,9 @@ proxy:
     # - "192.168.1.100"       # Example: specific IP
     # - "10.0.0.0/8"          # Example: CIDR range
     # - "127.0.0.1"           # Example: localhost
+  blacklisted_ips:            # IPs that are filtered even when disable_query_filtering is true
+    # - "192.168.1.50"        # Example: specific IP to always filter
+    # - "172.16.0.0/12"       # Example: CIDR range to always filter
   influxdb_client:
     timeout_seconds: 120              # Max timeout (default: 120 seconds)
     idle_connection_pool_size: 200    # How many idle connections to keep to InfluxDB
@@ -112,6 +115,7 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 - `proxy.host`: Host interface to bind to (default: "localhost")
 - `proxy.disable_query_filtering`: Disable all query filtering (default: false)
 - `proxy.whitelisted_ips`: List of IP addresses/CIDR ranges that bypass all filtering rules
+- `proxy.blacklisted_ips`: List of IP addresses/CIDR ranges that are filtered even when `disable_query_filtering` is true
 
 ### InfluxDB Client Configuration
 
@@ -160,14 +164,41 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 The proxy applies the following filtering rules:
 
 1. **IP Whitelisting**: IPs in the `whitelisted_ips` list bypass all filtering rules
-2. **Time Filter Requirement**: Queries must include a time filter (WHERE time > ... AND time < ...)
-3. **Time Range Limit**: Time range cannot exceed the configured maximum (default: 30 days)
-4. **Measurement Filtering**: If `allowed_measurements` is configured, only queries on those measurements are allowed
-5. **Expensive Function Detection**: Blocks queries with expensive functions without proper constraints
-6. **SHOW Series Limits**: Controls SHOW SERIES queries with configurable limits
-7. **Wildcard SELECT Protection**: Can block SELECT * queries without LIMIT clauses
-8. **GROUP BY Protection**: Can block unlimited GROUP BY queries
-9. **Statement Blocking**: Only blocks statements explicitly listed in `blocked_statements` (all others allowed by default)
+2. **Global Filtering Disable**: When `disable_query_filtering` is true, filtering is disabled for all IPs except those in `blacklisted_ips`
+3. **IP Blacklisting**: IPs in the `blacklisted_ips` list are always filtered, even when `disable_query_filtering` is true
+4. **Time Filter Requirement**: Queries must include a time filter (WHERE time > ... AND time < ...)
+5. **Time Range Limit**: Time range cannot exceed the configured maximum (default: 30 days)
+6. **Measurement Filtering**: If `allowed_measurements` is configured, only queries on those measurements are allowed
+7. **Expensive Function Detection**: Blocks queries with expensive functions without proper constraints
+8. **SHOW Series Limits**: Controls SHOW SERIES queries with configurable limits
+9. **Wildcard SELECT Protection**: Can block SELECT * queries without LIMIT clauses
+10. **GROUP BY Protection**: Can block unlimited GROUP BY queries
+11. **Statement Blocking**: Only blocks statements explicitly listed in `blocked_statements` (all others allowed by default)
+
+### IP Address Precedence
+
+When configuring IP filtering, it's important to understand the precedence order:
+
+**⚠️ Important**: If an IP address appears in both `whitelisted_ips` and `blacklisted_ips`, the **whitelist takes precedence** and the IP will bypass all filtering rules.
+
+**Processing Order:**
+
+1. First, blacklisted IPs are checked (only when `disable_query_filtering` is true)
+2. Then, whitelisted IPs are checked (always processed)
+3. Finally, normal filtering rules apply
+
+**Example:**
+
+```yaml
+proxy:
+  disable_query_filtering: true
+  whitelisted_ips:
+    - "192.168.1.100"    # This IP will bypass ALL filtering
+  blacklisted_ips:
+    - "192.168.1.100"    # This will be ignored due to whitelist precedence
+```
+
+In this case, `192.168.1.100` will bypass all filtering rules because it's whitelisted, even though it's also in the blacklist.
 
 ## Development
 

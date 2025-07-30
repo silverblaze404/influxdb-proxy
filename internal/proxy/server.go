@@ -62,11 +62,18 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	// Create query filter
 	queryFilter := filter.NewQueryFilter(cfg.Proxy.FilteringRules)
 
+	// Log blacklisted IPs if any are configured
+	if len(cfg.Proxy.BlacklistedIPs) > 0 {
+		log.WithFields(log.Fields{
+			"blacklisted_ips": cfg.Proxy.BlacklistedIPs,
+		}).Info("Blacklisted IPs configured")
+	}
+
 	// Log whitelisted IPs if any are configured
 	if len(cfg.Proxy.WhitelistedIPs) > 0 {
 		log.WithFields(log.Fields{
 			"whitelisted_ips": cfg.Proxy.WhitelistedIPs,
-		}).Info("Whitelisted IPs configured - these will bypass all filtering")
+		}).Info("Whitelisted IPs configured")
 	}
 
 	return &Server{
@@ -136,13 +143,14 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		"client_ip": clientIP,
 	}).Info("Processing query")
 
-	// Check if query filtering is disabled - if so, forward directly
-	if s.config.Proxy.IsQueryFilteringDisabled() {
-		log.WithFields(log.Fields{
-			"query":     query,
-			"client_ip": clientIP,
-		}).Debug("Query filtering disabled - forwarding directly")
+	var isBlacklisted = s.config.Proxy.IsIPBlacklisted(clientIP)
+	if isBlacklisted {
+		log.Info("Query from blacklisted IP - will proceed applying filters even if filtering is disabled")
+	}
 
+	// Check if query filtering is disabled
+	if s.config.Proxy.IsQueryFilteringDisabled() && !isBlacklisted {
+		log.Info("Query filtering disabled - forwarding directly")
 		atomic.AddInt64(&s.metrics.AllowedQueries, 1)
 		s.forwardToInfluxDB(w, r, clientIP)
 		return
@@ -150,11 +158,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// Check if client IP is whitelisted - if so, bypass filtering
 	if s.config.Proxy.IsIPWhitelisted(clientIP) {
-		log.WithFields(log.Fields{
-			"query":     query,
-			"client_ip": clientIP,
-		}).Debug("Query from whitelisted IP - bypassing filters")
-
+		log.Info("Query from whitelisted IP - bypassing filters")
 		atomic.AddInt64(&s.metrics.AllowedQueries, 1)
 		s.forwardToInfluxDB(w, r, clientIP)
 		return
@@ -165,11 +169,10 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !result.Allowed {
 		atomic.AddInt64(&s.metrics.BlockedQueries, 1)
 		log.WithFields(log.Fields{
-			"query":     query,
-			"reason":    result.Reason,
 			"client_ip": clientIP,
+			"reason":    result.Reason,
+			"query":     query,
 		}).Info("Query blocked by filtering rules")
-
 		s.sendError(w, http.StatusForbidden, fmt.Sprintf("Query blocked: %s", result.Reason))
 		return
 	}
@@ -193,8 +196,8 @@ func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clien
 	if err != nil {
 		atomic.AddInt64(&s.metrics.Errors, 1)
 		log.WithError(err).WithFields(log.Fields{
-			"path":      r.URL.Path,
 			"client_ip": clientIP,
+			"path":      r.URL.Path,
 		}).Error("Failed to forward request to InfluxDB")
 
 		// Return a generic 502 Bad Gateway without custom JSON formatting
@@ -214,8 +217,8 @@ func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clien
 	// Copy response body exactly as returned by InfluxDB
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		log.WithError(err).WithFields(log.Fields{
-			"path":      r.URL.Path,
 			"client_ip": clientIP,
+			"path":      r.URL.Path,
 		}).Error("Failed to copy response body")
 		// Ensure response body is drained to allow connection reuse
 		io.Copy(io.Discard, resp.Body)
@@ -223,10 +226,10 @@ func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clien
 	}
 
 	log.WithFields(log.Fields{
+		"client_ip": clientIP,
 		"method":    r.Method,
 		"path":      r.URL.Path,
 		"status":    resp.StatusCode,
-		"client_ip": clientIP,
 	}).Debug("Request forwarded successfully")
 }
 
@@ -338,13 +341,13 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		duration := time.Since(start)
 
 		log.WithFields(log.Fields{
+			"client_ip":   clientIP,
+			"remote_addr": r.RemoteAddr,
 			"method":      r.Method,
 			"url":         r.URL.Path,
 			"status":      wrapper.statusCode,
-			"duration":    duration,
-			"remote_addr": r.RemoteAddr,
-			"client_ip":   clientIP,
 			"user_agent":  r.UserAgent(),
+			"duration":    duration,
 		}).Info("HTTP request processed")
 	})
 }

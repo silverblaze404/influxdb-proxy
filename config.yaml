@@ -31,6 +31,12 @@ proxy:
     # - "192.168.1.100"       # Example: specific IP
     # - "10.0.0.0/8"          # Example: CIDR range
     # - "127.0.0.1"           # Example: localhost
+
+  # IPs that are filtered even when disable_query_filtering is true
+  # This is only checked when disable_query_filtering is enabled
+  blacklisted_ips:
+    # - "127.0.0.1"           # Example: specific IP to always filter
+    # - "172.16.0.0/12"       # Example: CIDR range to always filter
   
   ## InfluxDB client connection settings
   influxdb_client:

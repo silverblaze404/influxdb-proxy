@@ -160,7 +160,7 @@ The proxy is configured via `config.yaml` with these main sections:
 
 - **Query Injection Protection**: InfluxDB's InfluxQL parser validates syntax and structure
 - **Resource Protection**: Prevents expensive queries that could impact performance
-- **IP-based Access Control**: Whitelisted IPs can bypass filtering rules for trusted sources
+- **IP-based Access Control**: Bypass filtering rules on the basis of whitelised ips and blacklisted ips configuration
 - **Statement Restriction**: Blocks only explicitly configured statements (blacklist approach)
 - **Time-based Filtering**: Ensures queries are bounded to prevent full table scans
 - **Measurement Access Control**: Optional whitelist to restrict access to specific measurements

@@ -35,6 +35,7 @@ type ProxyConfig struct {
 	Port                  int                  `yaml:"port"`
 	Host                  string               `yaml:"host"`
 	WhitelistedIPs        []string             `yaml:"whitelisted_ips"`         // IPs that bypass filtering
+	BlacklistedIPs        []string             `yaml:"blacklisted_ips"`         // IPs that are filtered even when disable_query_filtering is true
 	DisableQueryFiltering bool                 `yaml:"disable_query_filtering"` // Disable query filtering (default: false - filtering enabled)
 	FilteringRulesFile    string               `yaml:"filtering_rules_file"`    // Path to external filtering rules file
 	FilteringRules        FilteringRules       `yaml:"filtering_rules"`
@@ -253,6 +254,37 @@ func (p *ProxyConfig) IsIPWhitelisted(clientIP string) bool {
 			// Check if it's an individual IP
 			if whitelistedIP := net.ParseIP(whitelistedEntry); whitelistedIP != nil {
 				if ip.Equal(whitelistedIP) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// IsIPBlacklisted checks if the given IP address is in the blacklist
+// Supports both individual IP addresses and CIDR ranges
+func (p *ProxyConfig) IsIPBlacklisted(clientIP string) bool {
+	if len(p.BlacklistedIPs) == 0 {
+		return false
+	}
+
+	ip := net.ParseIP(clientIP)
+	if ip == nil {
+		return false
+	}
+
+	for _, blacklistedEntry := range p.BlacklistedIPs {
+		// Check if it's a CIDR range
+		if _, ipNet, err := net.ParseCIDR(blacklistedEntry); err == nil {
+			if ipNet.Contains(ip) {
+				return true
+			}
+		} else {
+			// Check if it's an individual IP
+			if blacklistedIP := net.ParseIP(blacklistedEntry); blacklistedIP != nil {
+				if ip.Equal(blacklistedIP) {
 					return true
 				}
 			}

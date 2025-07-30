@@ -70,7 +70,7 @@ func main() {
 
 	log.WithFields(log.Fields{
 		"address":       addr,
-		"read_timeout":  server.ReadTimeout,
+		"read_timeout":  server.ReadHeaderTimeout,
 		"write_timeout": server.WriteTimeout,
 		"idle_timeout":  server.IdleTimeout,
 	}).Info("HTTP server configured with timeout settings")
