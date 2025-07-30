@@ -49,6 +49,17 @@ func TestQueryFilter_ValidateQuery(t *testing.T) {
 			query:    "SHOW DATABASES",
 			expected: true,
 		},
+		{
+			name:     "Query with time filter in subquery should be allowed",
+			query:    `SELECT sum("last_total") FROM (SELECT last("total_entities") AS "last_total" FROM "outstanding_orders" WHERE time > now() - 30m AND "status" =~ /created|temporary_unfulfillable|pending|inventory_awaited$/ AND "bin_tags" =~ /^$bin_tags$/ GROUP BY "bin_tags", "status")`,
+			expected: true,
+		},
+		{
+			name:     "Query with subquery but no time filter should be blocked",
+			query:    `SELECT sum("last_total") FROM (SELECT last("total_entities") AS "last_total" FROM "outstanding_orders" WHERE "status" =~ /created/ GROUP BY "bin_tags", "status")`,
+			expected: false,
+			reason:   "Query must include a time filter",
+		},
 	}
 
 	for _, tt := range tests {

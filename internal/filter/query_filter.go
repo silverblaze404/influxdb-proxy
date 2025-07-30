@@ -214,7 +214,7 @@ func (qf *QueryFilter) validateStatement(stmt influxql.Statement, queryString st
 func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, queryString string) FilterResult {
 	// Check if time filter is required and present
 	if qf.rules.RequireTimeFilter {
-		if !qf.hasTimeFilter(stmt.Condition) {
+		if !qf.hasTimeFilterInStatement(stmt) {
 			return FilterResult{
 				Allowed: false,
 				Reason:  "Query must include a time filter",
@@ -281,6 +281,33 @@ func (qf *QueryFilter) hasTimeFilter(condition influxql.Expr) bool {
 	}
 
 	return qf.containsTimeCondition(condition)
+}
+
+// hasTimeFilterInStatement checks if a SELECT statement has a time filter, including in subqueries
+func (qf *QueryFilter) hasTimeFilterInStatement(stmt *influxql.SelectStatement) bool {
+	// Check the main WHERE clause
+	if qf.hasTimeFilter(stmt.Condition) {
+		return true
+	}
+
+	// Check subqueries in the FROM clause
+	return qf.hasTimeFilterInSources(stmt.Sources)
+}
+
+// hasTimeFilterInSources recursively checks for time filters in sources, including subqueries
+func (qf *QueryFilter) hasTimeFilterInSources(sources influxql.Sources) bool {
+	for _, source := range sources {
+		switch s := source.(type) {
+		case *influxql.SubQuery:
+			if s.Statement != nil {
+				// Recursively check the subquery
+				if qf.hasTimeFilterInStatement(s.Statement) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (qf *QueryFilter) containsTimeCondition(expr influxql.Expr) bool {
