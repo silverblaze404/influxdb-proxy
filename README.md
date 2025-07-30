@@ -219,6 +219,7 @@ In this case, `192.168.1.100` will bypass all filtering rules because it's white
 ├── docker-compose.yml  # For testing with InfluxDB
 └── README.md
 └── ARCHITECTURE.md
+...
 ```
 
 ### Building
