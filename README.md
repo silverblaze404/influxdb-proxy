@@ -11,7 +11,8 @@ A Go-based proxy server for InfluxDB v1 that filters and rejects expensive queri
 - **Performance Protection**: Guards against expensive operations that could impact database performance
 - **Logging**: Comprehensive logging of filtered queries and proxy activity
 - **Health Checks**: Built-in health check endpoints
-- **Metrics**: Prometheus-style metrics endpoint for monitoring
+- **Metrics**: Metrics endpoint for monitoring
+- **IP Blacklisting**: Configure IP addresses/CIDR ranges that should go through the filtering rules
 - **IP Whitelisting**: Configure trusted IP addresses/CIDR ranges that bypass all filtering rules
 
 ## Quick Start
@@ -214,10 +215,10 @@ In this case, `192.168.1.100` will bypass all filtering rules because it's white
 │   ├── filter/         # Query filtering logic
 │   ├── proxy/          # HTTP proxy implementation
 │   └── influxdb/       # InfluxDB client wrapper
-├── pkg/                # Public packages (if any)
 ├── config.yaml         # Default configuration
 ├── docker-compose.yml  # For testing with InfluxDB
 └── README.md
+└── ARCHITECTURE.md
 ```
 
 ### Building
