@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/realclientip/realclientip-go"
 	log "github.com/sirupsen/logrus"
 
 	"influxdb-proxy/internal/config"
@@ -364,12 +365,21 @@ func (w *responseWriterWrapper) WriteHeader(statusCode int) {
 
 // getClientIP extracts the real client IP from the request
 func (s *Server) getClientIP(r *http.Request) string {
-	strat := realclientip.NewChainStrategy(
-		realclientip.Must(realclientip.NewSingleIPHeaderStrategy("Cf-Connecting-IP")),
-		realclientip.Must(realclientip.NewLeftmostNonPrivateStrategy("X-Forwarded-For")),
-		realclientip.RemoteAddrStrategy{},
-	)
-	return strat.ClientIP(r.Header, r.RemoteAddr)
+	// Try to get the first IP from X-Forwarded-For header
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Split by comma and get the first IP (original client)
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	// Fall back to RemoteAddr
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return host
 }
 
 // Close performs cleanup of server resources

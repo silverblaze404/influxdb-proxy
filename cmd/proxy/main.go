@@ -90,17 +90,17 @@ func main() {
 
 	log.Info("Shutting down server...")
 
-	// Cleanup proxy server resources
-	if err := proxyServer.Close(); err != nil {
-		log.WithError(err).Error("Error during proxy cleanup")
-	}
-
-	// Graceful shutdown with timeout
+	// Graceful shutdown with timeout - this waits for pending requests to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	// Cleanup proxy server resources after all requests are done
+	if err := proxyServer.Close(); err != nil {
+		log.WithError(err).Error("Error during proxy cleanup")
 	}
 
 	log.Info("Server exited")
