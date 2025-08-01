@@ -27,14 +27,17 @@ type Server struct {
 	influxClient *influxdb.Client
 	queryFilter  *filter.QueryFilter
 	metrics      *Metrics
+	throttler    *RequestThrottler
 }
 
 // Metrics holds basic metrics for the proxy
 type Metrics struct {
-	TotalQueries   int64 `json:"total_queries"`
-	BlockedQueries int64 `json:"blocked_queries"`
-	AllowedQueries int64 `json:"allowed_queries"`
-	Errors         int64 `json:"errors"`
+	TotalQueries          int64 `json:"total_queries"`
+	BlockedQueries        int64 `json:"blocked_queries"`
+	AllowedQueries        int64 `json:"allowed_queries"`
+	Errors                int64 `json:"errors"`
+	ThrottledRequests     int64 `json:"throttled_requests"`
+	ConcurrentConnections int64 `json:"concurrent_connections"`
 }
 
 // ErrorResponse represents an error response
@@ -62,6 +65,23 @@ func NewServer(cfg *config.Config) (*Server, error) {
 
 	queryFilter := filter.NewQueryFilter(cfg.Proxy.FilteringRules)
 
+	// Create request throttler
+	throttler := NewRequestThrottler(
+		cfg.Proxy.Throttling.MaxConcurrentRequests,
+		time.Duration(cfg.Proxy.Throttling.RequestTimeoutSeconds)*time.Second,
+	)
+
+	server := &Server{
+		config:       cfg,
+		influxClient: influxClient,
+		queryFilter:  queryFilter,
+		metrics:      &Metrics{},
+		throttler:    throttler,
+	}
+
+	// Set metrics reference in throttler
+	throttler.SetMetrics(server.metrics)
+
 	// Log blacklisted IPs if any are configured
 	if len(cfg.Proxy.BlacklistedIPs) > 0 {
 		log.WithFields(log.Fields{
@@ -76,12 +96,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		}).Info("Whitelisted IPs configured")
 	}
 
-	return &Server{
-		config:       cfg,
-		influxClient: influxClient,
-		queryFilter:  queryFilter,
-		metrics:      &Metrics{},
-	}, nil
+	return server, nil
 }
 
 // Handler returns the HTTP handler for the proxy server
@@ -107,6 +122,9 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	mainRouter.Use(s.loggingMiddleware)
+
+	// Add throttling middleware for all routes
+	mainRouter.Use(s.throttler.Handler)
 
 	return mainRouter
 }
@@ -212,13 +230,16 @@ func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clien
 	w.WriteHeader(resp.StatusCode)
 
 	// Copy response body exactly as returned by InfluxDB
-	if _, err := io.Copy(w, resp.Body); err != nil {
+	written, err := io.Copy(w, resp.Body)
+	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
-			"client_ip": clientIP,
-			"path":      r.URL.Path,
+			"client_ip":     clientIP,
+			"path":          r.URL.Path,
+			"bytes_written": written,
 		}).Error("Failed to copy response body")
 		// Ensure response body is drained to allow connection reuse
 		io.Copy(io.Discard, resp.Body)
+		return
 	}
 
 	log.WithFields(log.Fields{
@@ -249,10 +270,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	metrics := map[string]any{
 		"proxy_metrics": map[string]int64{
-			"total_queries":   atomic.LoadInt64(&s.metrics.TotalQueries),
-			"blocked_queries": atomic.LoadInt64(&s.metrics.BlockedQueries),
-			"allowed_queries": atomic.LoadInt64(&s.metrics.AllowedQueries),
-			"errors":          atomic.LoadInt64(&s.metrics.Errors),
+			"total_queries":          atomic.LoadInt64(&s.metrics.TotalQueries),
+			"blocked_queries":        atomic.LoadInt64(&s.metrics.BlockedQueries),
+			"allowed_queries":        atomic.LoadInt64(&s.metrics.AllowedQueries),
+			"errors":                 atomic.LoadInt64(&s.metrics.Errors),
+			"throttled_requests":     atomic.LoadInt64(&s.metrics.ThrottledRequests),
+			"concurrent_connections": atomic.LoadInt64(&s.metrics.ConcurrentConnections),
+		},
+		"throttling": map[string]any{
+			"max_concurrent_requests": s.config.Proxy.Throttling.MaxConcurrentRequests,
+			"current_queue_length":    len(s.throttler.semaphore),
 		},
 		"timestamp": time.Now().UTC(),
 	}
@@ -267,16 +294,25 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 	}
 
 	// For POST requests, we need to preserve the body for forwarding
+	// Use a more efficient approach with TeeReader to avoid double memory usage
 	var bodyBytes []byte
+	var bodyReader io.Reader = r.Body
+
 	if r.Body != nil {
+		// Use a buffer to capture the body while preserving it
+		var buf bytes.Buffer
+		bodyReader = io.TeeReader(r.Body, &buf)
+
+		// Read only what we need for parsing
+		limitedReader := io.LimitReader(bodyReader, 1024*1024) // Limit to 1MB for query extraction
 		var err error
-		bodyBytes, err = io.ReadAll(r.Body)
+		bodyBytes, err = io.ReadAll(limitedReader)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to read request body: %w", err)
 		}
-		// After reading, the body stream is consumed (at EOF)
-		// Replace it with a fresh reader so it can be forwarded later
-		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+		// Create a new body reader that includes both what we read and the rest
+		r.Body = io.NopCloser(io.MultiReader(&buf, r.Body))
 	}
 
 	contentType := r.Header.Get("Content-Type")

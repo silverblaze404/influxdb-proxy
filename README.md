@@ -62,6 +62,12 @@ proxy:
     # read_timeout_seconds: 60    # Server read timeout (default: 2x client read timeout)
     # write_timeout_seconds: 240  # Server write timeout (default: 2x client write timeout)  
     # idle_timeout_seconds: 240   # Server idle timeout (default: 2x client idle timeout)
+
+  ## Request throttling settings
+  throttling:
+    max_concurrent_requests: 100     # Max concurrent requests to InfluxDB (default: 100)
+    request_timeout_seconds: 30      # Timeout for throttled requests (default: 30)
+
   filtering_rules:
     # Time-based filtering
     require_time_filter: true

@@ -42,6 +42,7 @@ type ProxyConfig struct {
 	FilteringRules        FilteringRules       `yaml:"filtering_rules"`
 	InfluxDBClient        InfluxDBClientConfig `yaml:"influxdb_client"`
 	ServerTimeouts        ServerTimeouts       `yaml:"server_timeouts"`
+	Throttling            ThrottlingConfig     `yaml:"throttling"`
 }
 
 // ServerTimeouts contains HTTP server timeout settings
@@ -58,6 +59,12 @@ type InfluxDBClientConfig struct {
 	MaxConcurrentConnections int `yaml:"max_concurrent_connections"` // Max active connections (default: 400)
 	ReadTimeoutSeconds       int `yaml:"read_timeout_seconds"`       // Default: 30
 	IdleTimeoutSeconds       int `yaml:"idle_timeout_seconds"`       // Default: 120
+}
+
+// ThrottlingConfig contains request throttling settings
+type ThrottlingConfig struct {
+	MaxConcurrentRequests int `yaml:"max_concurrent_requests"` // Max concurrent requests to InfluxDB (default: 100)
+	RequestTimeoutSeconds int `yaml:"request_timeout_seconds"` // Timeout for throttled requests (default: 30)
 }
 
 // FilteringRules contains configurable query filtering options
@@ -179,6 +186,15 @@ func setDefaults(config *Config) {
 	}
 	if serverTimeouts.IdleTimeoutSeconds == 0 {
 		serverTimeouts.IdleTimeoutSeconds = client.IdleTimeoutSeconds * 2
+	}
+
+	// Set throttling defaults
+	throttling := &config.Proxy.Throttling
+	if throttling.MaxConcurrentRequests == 0 {
+		throttling.MaxConcurrentRequests = 100 // Conservative default
+	}
+	if throttling.RequestTimeoutSeconds == 0 {
+		throttling.RequestTimeoutSeconds = 30
 	}
 
 	// Set filtering rule defaults
