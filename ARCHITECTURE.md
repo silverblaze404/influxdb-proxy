@@ -51,7 +51,8 @@ The InfluxDB Proxy is a Go-based middleware server that sits between clients and
 Located in `internal/proxy/server.go`, the proxy server handles:
 
 - **HTTP Server**: Listens on port 8087 (configurable)
-- **Request Router**: Uses Gorilla Mux for routing
+- **Request Router**: Uses Gorilla Mux for routing with configurable base path support
+- **Base Path Handling**: Configurable URL prefix for all endpoints (e.g., `/proxy/query` instead of `/query`)
 - **Query Handler**: Processes `/query` endpoint with filtering
 - **Forward Handler**: Forwards non-query requests directly to InfluxDB
 - **Metrics Collection**: Tracks query statistics
@@ -88,22 +89,23 @@ Located in `internal/config/config.go`, configuration handles:
 
 ### Query Processing
 
-1. **Request Reception**: Client sends query to proxy on port 8087
-2. **IP Whitelist Check**: Check if client IP is in the whitelisted IPs list
+1. **Request Reception**: Client sends query to proxy on configured base path (e.g., `/proxy/query` or `/query`)
+2. **Path Processing**: Proxy strips base path prefix before processing (when configured)
+3. **IP Whitelist Check**: Check if client IP is in the whitelisted IPs list
    - **If Whitelisted**: Skip all filtering rules and forward directly to InfluxDB
    - **If Not Whitelisted**: Proceed to query filtering
-3. **Query Extraction**: Proxy extracts query string and database from request
-4. **Query Parsing**: InfluxDB's InfluxQL library parses and analyzes the query structure
-5. **Rule Validation**: Query filter applies configured rules:
+4. **Query Extraction**: Proxy extracts query string and database from request
+5. **Query Parsing**: InfluxDB's InfluxQL library parses and analyzes the query structure
+6. **Rule Validation**: Query filter applies configured rules:
    - Requires time filters
    - Validates time range (max 30 days by default)
    - Checks allowed measurements (if configured)
    - Blocks expensive operations
    - Blocks only statements explicitly listed in `blocked_statements`
-6. **Decision**:
+7. **Decision**:
    - **If Allowed**: Forward to InfluxDB and return response
    - **If Blocked**: Return HTTP 403 with error message
-7. **Metrics Update**: Track query statistics
+8. **Metrics Update**: Track query statistics
 
 ### Non-Query Processing
 
@@ -144,7 +146,8 @@ Located in `internal/config/config.go`, configuration handles:
 The proxy is configured via `config.yaml` with these main sections:
 
 - **InfluxDB Connection**: Target database host, port and credentials
-- **Proxy Settings**: Port, host, timeout, whitelisted IPs, and query filtering controls
+- **Proxy Settings**: Port, host, base path, timeout, whitelisted IPs, and query filtering controls
+- **Base Path Configuration**: Configurable URL prefix for all endpoints (default: "/")
 - **InfluxDB Client Parameters**: Connection pooling and timeout settings optimized for single-host InfluxDB connections
 - **Server Timeout Parameters**: HTTP server timeout configuration with smart defaults (2x client timeouts)
 - **Filtering Rules**: Query validation and blocking criteria including:
@@ -197,3 +200,27 @@ The proxy is designed to be deployed as a sidecar or gateway service:
 - Kubernetes deployment ready
 - Graceful shutdown handling
 - Health check endpoints for load balancers
+
+## Base Path Routing
+
+The proxy supports configurable base path routing to enable flexible deployment scenarios:
+
+### Implementation Details
+
+- **Two Router Architecture**: Uses a main router for base path handling and an application router for endpoint logic
+- **Path Stripping**: Automatically strips base path prefix before forwarding requests to InfluxDB
+- **Conditional Logic**: For root path ("/"), routes are mounted directly; for custom paths, `http.StripPrefix` is used
+
+### Example Configurations
+
+```yaml
+# Default - all endpoints at root level
+proxy:
+  base_path: "/"
+# Endpoints: /query, /write, /health, /proxy_metrics
+
+# Custom prefix - all endpoints under /influx
+proxy:
+  base_path: "/proxy"
+# Endpoints: /proxy/query, /proxy/write, /proxy/health, /proxy/proxy_metrics
+```

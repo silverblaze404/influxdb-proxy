@@ -11,6 +11,10 @@ proxy:
   port: 8087
   host: "localhost"
   
+  # Base path prefix for all routes (default: "/")
+  # Example: "/proxy" will make endpoints available at /proxy/query, /proxy/write, etc.
+  base_path: "/proxy"
+  
   ## Query filtering settings
 
   # Disable query filtering (default: false - filtering enabled)

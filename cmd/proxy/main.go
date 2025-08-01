@@ -70,6 +70,7 @@ func main() {
 
 	log.WithFields(log.Fields{
 		"address":       addr,
+		"base_path":     cfg.Proxy.BasePath,
 		"read_timeout":  server.ReadHeaderTimeout,
 		"write_timeout": server.WriteTimeout,
 		"idle_timeout":  server.IdleTimeout,

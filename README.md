@@ -43,13 +43,15 @@ influxdb:
 proxy:
   port: 8087
   host: "localhost"
-  whitelisted_ips:            # IPs that bypass all filtering rules
-    # - "192.168.1.100"       # Example: specific IP
-    # - "10.0.0.0/8"          # Example: CIDR range
-    # - "127.0.0.1"           # Example: localhost
-  blacklisted_ips:            # IPs that are filtered even when disable_query_filtering is true
-    # - "192.168.1.50"        # Example: specific IP to always filter
-    # - "172.16.0.0/12"       # Example: CIDR range to always filter
+  base_path: "/"                      # Base path for all routes (default: "/")
+                                      # Example: "/proxy" makes endpoints available at /proxy/query, /proxy/write, etc.
+  whitelisted_ips:                    # IPs that bypass all filtering rules
+    # - "192.168.1.100"               # Example: specific IP
+    # - "10.0.0.0/8"                  # Example: CIDR range
+    # - "127.0.0.1"                   # Example: localhost
+  blacklisted_ips:                    # IPs that are filtered even when disable_query_filtering is true
+    # - "192.168.1.50"                # Example: specific IP to always filter
+    # - "172.16.0.0/12"               # Example: CIDR range to always filter
   influxdb_client:
     timeout_seconds: 120              # Max timeout (default: 120 seconds)
     idle_connection_pool_size: 200    # How many idle connections to keep to InfluxDB
@@ -114,6 +116,9 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 
 - `proxy.port`: Port for the proxy server (default: 8087)
 - `proxy.host`: Host interface to bind to (default: "localhost")
+- `proxy.base_path`: Base path prefix for all routes (default: "/")
+  - Example: Setting to "/proxy" makes endpoints available at `/proxy/query`, `/proxy/write`, etc.
+  - Useful for mounting the proxy behind reverse proxies or in containerized environments
 - `proxy.disable_query_filtering`: Disable all query filtering (default: false)
 - `proxy.whitelisted_ips`: List of IP addresses/CIDR ranges that bypass all filtering rules
 - `proxy.blacklisted_ips`: List of IP addresses/CIDR ranges that are filtered even when `disable_query_filtering` is true
@@ -155,10 +160,27 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 
 ## API Endpoints
 
+The proxy exposes all InfluxDB v1 endpoints with optional base path prefix.
+
+### Default Configuration (base_path: "/")
+
 - `POST /query` - Execute InfluxDB queries (with filtering)
 - `GET /proxy_health` - Health check endpoint  
 - `GET /proxy_metrics` - Prometheus-style metrics endpoint (if enabled)
-- All other REST endpoints exposed by influxdb v1
+- All other REST endpoints exposed by InfluxDB v1 (e.g., `/write`, `/ping`, `/health`)
+
+### Custom Base Path (e.g., base_path: "/proxy")
+
+- `POST /proxy/query` - Execute InfluxDB queries (with filtering)
+- `GET /proxy/proxy_health` - Health check endpoint  
+- `GET /proxy/proxy_metrics` - Prometheus-style metrics endpoint (if enabled)
+- All other REST endpoints exposed by InfluxDB v1 (e.g., `/proxy/write`, `/proxy/ping`, `/proxy/health`)
+
+**Note:** The base path allows you to mount the proxy under a specific URL prefix, useful for:
+
+- Reverse proxy configurations
+- API gateways
+- Containerized deployments with path-based routing
 
 ## Query Filtering Rules
 

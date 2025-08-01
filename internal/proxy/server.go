@@ -42,7 +42,7 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// NewServer creates a new proxy server
+// Creates a new proxy server
 func NewServer(cfg *config.Config) (*Server, error) {
 	// Create InfluxDB client with performance configuration
 	influxClient := influxdb.NewClient(
@@ -60,7 +60,6 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		log.Info("Successfully connected to InfluxDB")
 	}
 
-	// Create query filter
 	queryFilter := filter.NewQueryFilter(cfg.Proxy.FilteringRules)
 
 	// Log blacklisted IPs if any are configured
@@ -87,32 +86,34 @@ func NewServer(cfg *config.Config) (*Server, error) {
 
 // Handler returns the HTTP handler for the proxy server
 func (s *Server) Handler() http.Handler {
-	r := mux.NewRouter()
+	// Create the main router
+	mainRouter := mux.NewRouter()
 
-	// Query endpoint with filtering (highest priority)
-	r.HandleFunc("/query", s.handleQuery).Methods("POST", "GET")
+	// Create application router with all our routes
+	appRouter := mux.NewRouter()
 
-	// Proxy health check endpoint
-	r.HandleFunc("/proxy_health", s.handleHealth).Methods("GET")
-
-	// Proxy metrics endpoint (if enabled)
+	appRouter.HandleFunc("/query", s.handleQuery).Methods("POST", "GET")
+	appRouter.HandleFunc("/proxy_health", s.handleHealth).Methods("GET")
 	if s.config.Metrics.Enabled {
-		r.HandleFunc("/proxy_metrics", s.handleMetrics).Methods("GET")
+		appRouter.HandleFunc("/proxy_metrics", s.handleMetrics).Methods("GET")
+	}
+	appRouter.PathPrefix("/").HandlerFunc(s.handleForward)
+
+	// Mount the application router with or without base path
+	if s.config.Proxy.BasePath == "/" {
+		mainRouter.PathPrefix("/").Handler(appRouter)
+	} else {
+		mainRouter.PathPrefix(s.config.Proxy.BasePath).Handler(http.StripPrefix(s.config.Proxy.BasePath, appRouter))
 	}
 
-	// Catch-all handler for all other InfluxDB endpoints - forward directly
-	r.PathPrefix("/").HandlerFunc(s.handleForward)
+	mainRouter.Use(s.loggingMiddleware)
 
-	// Add logging middleware
-	r.Use(s.loggingMiddleware)
-
-	return r
+	return mainRouter
 }
 
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt64(&s.metrics.TotalQueries, 1)
 
-	// Extract client IP
 	clientIP := s.getClientIP(r)
 
 	// Extract query from request for filtering
@@ -183,16 +184,12 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
-	// Extract client IP
 	clientIP := s.getClientIP(r)
-
-	// Use the same forwarding logic as query endpoint
 	s.forwardToInfluxDB(w, r, clientIP)
 }
 
-// forwardToInfluxDB forwards the request to InfluxDB and handles the response
+// Forwards the request to InfluxDB and handles the response
 func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clientIP string) {
-	// Forward request directly to InfluxDB
 	resp, err := s.influxClient.ForwardRequest(r)
 	if err != nil {
 		atomic.AddInt64(&s.metrics.Errors, 1)
@@ -209,10 +206,9 @@ func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clien
 	}
 	defer resp.Body.Close()
 
-	// Copy ALL response headers exactly as they are
+	// Copy all response data exactly as they are
 	maps.Copy(w.Header(), resp.Header)
 
-	// Set status code exactly as returned by InfluxDB
 	w.WriteHeader(resp.StatusCode)
 
 	// Copy response body exactly as returned by InfluxDB
@@ -223,7 +219,6 @@ func (s *Server) forwardToInfluxDB(w http.ResponseWriter, r *http.Request, clien
 		}).Error("Failed to copy response body")
 		// Ensure response body is drained to allow connection reuse
 		io.Copy(io.Discard, resp.Body)
-		// Note: We can't change the response at this point since headers are already sent
 	}
 
 	log.WithFields(log.Fields{
@@ -241,7 +236,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":   "1.0.0",
 	}
 
-	// Check InfluxDB health
 	if err := s.influxClient.Health(); err != nil {
 		health["status"] = "unhealthy"
 		health["influxdb_error"] = err.Error()
@@ -269,12 +263,10 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 	if r.Method == "GET" {
-		// Extract from query parameters
 		return r.URL.Query().Get("q"), r.URL.Query().Get("db"), nil
 	}
 
 	// For POST requests, we need to preserve the body for forwarding
-	// Read the body content first
 	var bodyBytes []byte
 	if r.Body != nil {
 		var err error
@@ -287,11 +279,9 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
-	// Check content type
 	contentType := r.Header.Get("Content-Type")
 
 	if contentType == "application/x-www-form-urlencoded" {
-		// Parse form data from the body bytes
 		values, err := url.ParseQuery(string(bodyBytes))
 		if err != nil {
 			return "", "", fmt.Errorf("failed to parse form-encoded request body: %w", err)
@@ -300,7 +290,6 @@ func (s *Server) extractQuery(r *http.Request) (string, string, error) {
 	}
 
 	if contentType == "application/json" {
-		// Parse JSON body
 		var req struct {
 			Query    string `json:"q"`
 			Database string `json:"db"`
@@ -331,10 +320,8 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Extract client IP
 		clientIP := s.getClientIP(r)
 
-		// Create a response writer wrapper to capture status code
 		wrapper := &responseWriterWrapper{ResponseWriter: w, statusCode: http.StatusOK}
 
 		next.ServeHTTP(wrapper, r)
@@ -363,7 +350,7 @@ func (w *responseWriterWrapper) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
-// getClientIP extracts the real client IP from the request
+// Extracts the real client IP from the request
 func (s *Server) getClientIP(r *http.Request) string {
 	// Try to get the first IP from X-Forwarded-For header
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -384,7 +371,6 @@ func (s *Server) getClientIP(r *http.Request) string {
 
 // Close performs cleanup of server resources
 func (s *Server) Close() error {
-	// Close InfluxDB client resources
 	if s.influxClient != nil {
 		s.influxClient.Close()
 	}

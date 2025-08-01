@@ -34,6 +34,7 @@ func (c *InfluxDBConfig) URL() string {
 type ProxyConfig struct {
 	Port                  int                  `yaml:"port"`
 	Host                  string               `yaml:"host"`
+	BasePath              string               `yaml:"base_path"`               // Base path prefix for all routes (default: "/")
 	WhitelistedIPs        []string             `yaml:"whitelisted_ips"`         // IPs that bypass filtering
 	BlacklistedIPs        []string             `yaml:"blacklisted_ips"`         // IPs that are filtered even when disable_query_filtering is true
 	DisableQueryFiltering bool                 `yaml:"disable_query_filtering"` // Disable query filtering (default: false - filtering enabled)
@@ -103,10 +104,8 @@ func Load(filename string) (*Config, error) {
 		}
 	}
 
-	// Set defaults
 	setDefaults(&config)
 
-	// Validate configuration
 	if err := validate(&config); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -114,7 +113,7 @@ func Load(filename string) (*Config, error) {
 	return &config, nil
 }
 
-// loadExternalFilteringRules loads filtering rules from an external YAML file
+// Loads filtering rules from an external YAML file
 func loadExternalFilteringRules(config *Config, filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -138,6 +137,9 @@ func setDefaults(config *Config) {
 	}
 	if config.Proxy.Port == 0 {
 		config.Proxy.Port = 8087
+	}
+	if config.Proxy.BasePath == "" {
+		config.Proxy.BasePath = "/"
 	}
 	if config.Logging.Level == "" {
 		config.Logging.Level = "info"
@@ -199,6 +201,19 @@ func validate(config *Config) error {
 	if config.Proxy.Port < 1 || config.Proxy.Port > 65535 {
 		return fmt.Errorf("proxy.port must be between 1 and 65535")
 	}
+
+	// Validate and normalize base path
+	if config.Proxy.BasePath == "" {
+		config.Proxy.BasePath = "/"
+	}
+	if config.Proxy.BasePath[0] != '/' {
+		return fmt.Errorf("proxy.base_path must start with '/'")
+	}
+	// Remove trailing slash unless it's just "/"
+	if len(config.Proxy.BasePath) > 1 && config.Proxy.BasePath[len(config.Proxy.BasePath)-1] == '/' {
+		config.Proxy.BasePath = config.Proxy.BasePath[:len(config.Proxy.BasePath)-1]
+	}
+
 	if config.Proxy.FilteringRules.MaxTimeRangeHours < 0 {
 		return fmt.Errorf("filtering_rules.max_time_range_hours must be positive")
 	}
@@ -294,7 +309,7 @@ func (p *ProxyConfig) IsIPBlacklisted(clientIP string) bool {
 	return false
 }
 
-// IsQueryFilteringDisabled returns true if query filtering is disabled
+// Returns true if query filtering is disabled
 func (p *ProxyConfig) IsQueryFilteringDisabled() bool {
 	return p.DisableQueryFiltering
 }
