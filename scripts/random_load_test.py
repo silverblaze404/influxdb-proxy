@@ -1,12 +1,10 @@
 import requests
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-# https://qa4-adidas300qa.greymatter.greyorange.com/influx-proxy
+
 # Constants
-VALID_URL = "https://qa4-adidas300qa.greymatter.greyorange.com/influx-proxy/query?q=select * from item_picked where time > now() -  2w&db=GreyOrange"
-INVALID_URL = "https://qa4-adidas300qa.greymatter.greyorange.com/influx-proxy/query?q=select * from item_picked where time > now() -  10w&db=GreyOrange"
-# VALID_URL = "http://localhost:8087/query?q=select * from xd where time > now() -  2w&db=mydb"
-# INVALID_URL = "http://localhost:8087/query?q=select * from xd where time > now() -  10w&db=mydb"
+VALID_URL = "http://localhost:8087/query?q=select * from xd where time > now() -  2w&db=mydb"
+INVALID_URL = "http://localhost:8087/query?q=select * from xd where time > now() -  10w&db=mydb"
 TOTAL_REQUESTS = 1000
 VALID_PERCENT = 0.7
 
