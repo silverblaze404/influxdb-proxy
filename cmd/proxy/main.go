@@ -61,11 +61,11 @@ func main() {
 	// Setup HTTP server with configurable timeout settings
 	addr := fmt.Sprintf("%s:%d", cfg.Proxy.Host, cfg.Proxy.Port)
 	server := &http.Server{
-		Addr:              addr,
-		Handler:           proxyServer.Handler(),
-		ReadHeaderTimeout: time.Duration(cfg.Proxy.ServerTimeouts.ReadTimeoutSeconds) * time.Second,
-		WriteTimeout:      time.Duration(cfg.Proxy.ServerTimeouts.WriteTimeoutSeconds) * time.Second,
-		IdleTimeout:       time.Duration(cfg.Proxy.ServerTimeouts.IdleTimeoutSeconds) * time.Second,
+		Addr:         addr,
+		Handler:      proxyServer.Handler(),
+		ReadTimeout:  time.Duration(cfg.Proxy.ServerTimeouts.ReadTimeoutSeconds) * time.Second,
+		WriteTimeout: time.Duration(cfg.Proxy.ServerTimeouts.WriteTimeoutSeconds) * time.Second,
+		IdleTimeout:  time.Duration(cfg.Proxy.ServerTimeouts.IdleTimeoutSeconds) * time.Second,
 	}
 
 	log.WithFields(log.Fields{
