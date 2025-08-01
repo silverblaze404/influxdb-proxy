@@ -115,5 +115,8 @@ __pycache__/
 *.sqlite3
 
 # InfluxDB data (if running locally)
-influxdb_data/
+influxdb/
 data/
+
+# Python scripts
+*.py
