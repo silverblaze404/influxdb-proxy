@@ -2,7 +2,7 @@
 
 # Time-based filtering
 require_time_filter: true
-max_time_range_hours: 720          # 30 days max time range
+max_time_range_hours: 840          # 35 days max time range
 
 # Performance filtering
 block_wildcard_select: false       # Block SELECT * without LIMIT
