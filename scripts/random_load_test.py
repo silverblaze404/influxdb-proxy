@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Constants
 #VALID_URL = "http://qa4-hagergmc-metrics.greymatter.greyorange.com:8086/query?q=select * from item_picked where installation_id='qa4-hagergmc' and time > now() -  2w&db=GreyOrange"
 #INVALID_URL = "http://qa4-hagergmc-metrics.greymatter.greyorange.com:8086/query?q=select * from item_picked where installation_id='qa4-hagergmc' and time > now() -  10w&db=GreyOrange"
-VALID_URL = "http://localhost:8087/proxy/query?q=select * from item_picked where time > now() -  2w&db=GreyOrange"
-INVALID_URL = "http://localhost:8087/proxy/query?q=select * from item_picked where time > now() -  10w&db=GreyOrange"
+VALID_URL = "http://localhost:8087/query?q=select * from xd where time > now() -  2w&db=mydb"
+INVALID_URL = "http://localhost:8087/query?q=select * from xd where time > now() -  10w&db=mydb"
 TOTAL_REQUESTS = 1000
 VALID_PERCENT = 0.7
 

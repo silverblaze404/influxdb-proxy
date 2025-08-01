@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Configuration ---
 # Your InfluxDB endpoint
-INFLUXDB_URL = "http://localhost:8087/proxy"
+INFLUXDB_URL = "http://localhost:8087"
 
 # Database and measurement names
 DATABASE = "mydb"
