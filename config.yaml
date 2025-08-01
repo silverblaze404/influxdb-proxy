@@ -13,7 +13,7 @@ proxy:
   
   # Base path prefix for all routes (default: "/")
   # Example: "/proxy" will make endpoints available at /proxy/query, /proxy/write, etc.
-  base_path: "/proxy"
+  base_path: "/"
   
   ## Query filtering settings
 
