@@ -224,7 +224,7 @@ func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, q
 	}
 
 	// Check time range if time filter exists and max time range is configured
-	if qf.rules.MaxTimeRangeHours > 0 {
+	if qf.rules.RequireTimeFilter && qf.rules.MaxTimeRangeHours > 0 {
 		if timeRange := qf.extractTimeRangeFromStatement(stmt); timeRange != nil {
 			maxDuration := time.Duration(qf.rules.MaxTimeRangeHours) * time.Hour
 			actualDuration := timeRange.Duration()
