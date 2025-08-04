@@ -227,7 +227,16 @@ func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, q
 	if qf.rules.RequireTimeFilter && qf.rules.MaxTimeRangeHours > 0 {
 		if timeRange := qf.extractTimeRangeFromStatement(stmt); timeRange != nil {
 			maxDuration := time.Duration(qf.rules.MaxTimeRangeHours) * time.Hour
+			warnDuration := time.Duration(qf.rules.WarnQueryDurationHours) * time.Hour
 			actualDuration := timeRange.Duration()
+			if actualDuration > warnDuration {
+				log.WithFields(log.Fields{
+					"query":            queryString,
+					"actual_duration":  actualDuration,
+					"allowed_duration": maxDuration,
+					"warn_duration":    warnDuration,
+				}).Warn("Query exceeds warning threshold")
+			}
 			if actualDuration > maxDuration {
 				return FilterResult{
 					Allowed: false,

@@ -69,15 +69,16 @@ type ThrottlingConfig struct {
 
 // FilteringRules contains configurable query filtering options
 type FilteringRules struct {
-	RequireTimeFilter     bool     `yaml:"require_time_filter"`
-	MaxTimeRangeHours     int      `yaml:"max_time_range_hours"`
-	BlockWildcardSelect   bool     `yaml:"block_wildcard_select"`
-	BlockUnlimitedGroupBy bool     `yaml:"block_unlimited_group_by"`
-	BlockExpensiveShows   bool     `yaml:"block_expensive_shows"`
-	MaxShowSeriesLimit    int      `yaml:"max_show_series_limit"`
-	BlockedFunctions      []string `yaml:"blocked_functions"`
-	BlockedStatements     []string `yaml:"blocked_statements"`
-	AllowedMeasurements   []string `yaml:"allowed_measurements"`
+	RequireTimeFilter      bool     `yaml:"require_time_filter"`
+	MaxTimeRangeHours      int      `yaml:"max_time_range_hours"`
+	WarnQueryDurationHours int      `yaml:"warn_query_duration_hours"`
+	BlockWildcardSelect    bool     `yaml:"block_wildcard_select"`
+	BlockUnlimitedGroupBy  bool     `yaml:"block_unlimited_group_by"`
+	BlockExpensiveShows    bool     `yaml:"block_expensive_shows"`
+	MaxShowSeriesLimit     int      `yaml:"max_show_series_limit"`
+	BlockedFunctions       []string `yaml:"blocked_functions"`
+	BlockedStatements      []string `yaml:"blocked_statements"`
+	AllowedMeasurements    []string `yaml:"allowed_measurements"`
 }
 
 // LoggingConfig contains logging settings
@@ -200,7 +201,10 @@ func setDefaults(config *Config) {
 	// Set filtering rule defaults
 	rules := &config.Proxy.FilteringRules
 	if rules.MaxTimeRangeHours == 0 {
-		rules.MaxTimeRangeHours = 720 // 30 days
+		rules.MaxTimeRangeHours = 840 // 35 days
+	}
+	if rules.WarnQueryDurationHours == 0 {
+		rules.WarnQueryDurationHours = 336 // 14 days
 	}
 	if rules.MaxShowSeriesLimit == 0 {
 		rules.MaxShowSeriesLimit = 10000

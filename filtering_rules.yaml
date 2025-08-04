@@ -4,6 +4,10 @@
 require_time_filter: true
 max_time_range_hours: 840          # 35 days max time range
 
+
+# Print warning log if query exceeds a warn threshold
+warn_query_duration_hours: 336    # Warn if query takes longer than 14 days
+
 # Performance filtering
 block_wildcard_select: false       # Block SELECT * without LIMIT
 block_unlimited_group_by: false    # Block GROUP BY without LIMIT or time bucketing
