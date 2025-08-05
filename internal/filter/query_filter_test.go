@@ -784,3 +784,75 @@ func TestQueryFilter_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryFilter_OffsetLimit(t *testing.T) {
+	rules := config.FilteringRules{
+		RequireTimeFilter: false, // Disable time filter requirement for this test
+		MaxOffsetLimit:    1000,  // Set max offset limit to 1000
+	}
+	filter := NewQueryFilter(rules)
+
+	tests := []struct {
+		name     string
+		query    string
+		expected bool
+		reason   string
+	}{
+		{
+			name:     "Query with small offset",
+			query:    "SELECT value FROM mymeasurement LIMIT 10 OFFSET 100",
+			expected: true,
+		},
+		{
+			name:     "Query with offset at limit",
+			query:    "SELECT value FROM mymeasurement LIMIT 10 OFFSET 1000",
+			expected: true,
+		},
+		{
+			name:     "Query with offset exceeding limit",
+			query:    "SELECT value FROM mymeasurement LIMIT 10 OFFSET 1001",
+			expected: false,
+			reason:   "OFFSET value (1001) exceeds maximum allowed (1000)",
+		},
+		{
+			name:     "Query with very large offset",
+			query:    "SELECT value FROM mymeasurement LIMIT 10 OFFSET 999999",
+			expected: false,
+			reason:   "OFFSET value (999999) exceeds maximum allowed (1000)",
+		},
+		{
+			name:     "Query without offset",
+			query:    "SELECT value FROM mymeasurement LIMIT 10",
+			expected: true,
+		},
+		{
+			name:     "Query with offset disabled (MaxOffsetLimit = 0)",
+			query:    "SELECT value FROM mymeasurement LIMIT 10 OFFSET 999999",
+			expected: true, // Will be tested with different rules
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// For the last test case, use different rules with MaxOffsetLimit = 0
+			testFilter := filter
+			if tt.name == "Query with offset disabled (MaxOffsetLimit = 0)" {
+				disabledRules := config.FilteringRules{
+					RequireTimeFilter: false,
+					MaxOffsetLimit:    0, // Disabled
+				}
+				testFilter = NewQueryFilter(disabledRules)
+			}
+
+			result := testFilter.ValidateQuery(tt.query)
+			if result.Allowed != tt.expected {
+				t.Errorf("ValidateQuery() = %v, expected %v. Reason: %s", result.Allowed, tt.expected, result.Reason)
+			}
+			if !tt.expected && tt.reason != "" {
+				if !strings.Contains(result.Reason, tt.reason) {
+					t.Errorf("Expected reason to contain '%s', got '%s'", tt.reason, result.Reason)
+				}
+			}
+		})
+	}
+}

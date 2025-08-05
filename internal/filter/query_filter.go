@@ -214,7 +214,7 @@ func (qf *QueryFilter) validateStatement(stmt influxql.Statement, queryString st
 func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, queryString string) FilterResult {
 	// Check if time filter is required and present
 	if qf.rules.RequireTimeFilter {
-		if !qf.hasTimeFilterInStatement(stmt) {
+		if !qf.HasTimeFilterInStatement(stmt) {
 			return FilterResult{
 				Allowed: false,
 				Reason:  "Query must include a time filter",
@@ -225,7 +225,7 @@ func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, q
 
 	// Check time range if time filter exists and max time range is configured
 	if qf.rules.RequireTimeFilter && qf.rules.MaxTimeRangeHours > 0 {
-		if timeRange := qf.extractTimeRangeFromStatement(stmt); timeRange != nil {
+		if timeRange := qf.ExtractTimeRangeFromStatement(stmt); timeRange != nil {
 			maxDuration := time.Duration(qf.rules.MaxTimeRangeHours) * time.Hour
 			warnDuration := time.Duration(qf.rules.WarnQueryDurationHours) * time.Hour
 			actualDuration := timeRange.Duration()
@@ -244,6 +244,15 @@ func (qf *QueryFilter) validateSelectStatement(stmt *influxql.SelectStatement, q
 					Query:   queryString,
 				}
 			}
+		}
+	}
+
+	// Check for large offset values
+	if qf.rules.MaxOffsetLimit > 0 && stmt.Offset > qf.rules.MaxOffsetLimit {
+		return FilterResult{
+			Allowed: false,
+			Reason:  fmt.Sprintf("OFFSET value (%d) exceeds maximum allowed (%d)", stmt.Offset, qf.rules.MaxOffsetLimit),
+			Query:   queryString,
 		}
 	}
 
@@ -292,8 +301,8 @@ func (qf *QueryFilter) hasTimeFilter(condition influxql.Expr) bool {
 	return qf.containsTimeCondition(condition)
 }
 
-// hasTimeFilterInStatement checks if a SELECT statement has a time filter, including in subqueries
-func (qf *QueryFilter) hasTimeFilterInStatement(stmt *influxql.SelectStatement) bool {
+// HasTimeFilterInStatement checks if a SELECT statement has a time filter, including in subqueries
+func (qf *QueryFilter) HasTimeFilterInStatement(stmt *influxql.SelectStatement) bool {
 	// Check the main WHERE clause
 	if qf.hasTimeFilter(stmt.Condition) {
 		return true
@@ -310,7 +319,7 @@ func (qf *QueryFilter) hasTimeFilterInSources(sources influxql.Sources) bool {
 		case *influxql.SubQuery:
 			if s.Statement != nil {
 				// Recursively check the subquery
-				if qf.hasTimeFilterInStatement(s.Statement) {
+				if qf.HasTimeFilterInStatement(s.Statement) {
 					return true
 				}
 			}
@@ -372,8 +381,8 @@ func (qf *QueryFilter) extractTimeRange(condition influxql.Expr) *TimeRange {
 	return nil
 }
 
-// extractTimeRangeFromStatement extracts time range from a SELECT statement, including subqueries
-func (qf *QueryFilter) extractTimeRangeFromStatement(stmt *influxql.SelectStatement) *TimeRange {
+// ExtractTimeRangeFromStatement extracts time range from a SELECT statement, including subqueries
+func (qf *QueryFilter) ExtractTimeRangeFromStatement(stmt *influxql.SelectStatement) *TimeRange {
 	// Check the main WHERE clause first
 	if timeRange := qf.extractTimeRange(stmt.Condition); timeRange != nil {
 		return timeRange
@@ -390,7 +399,7 @@ func (qf *QueryFilter) extractTimeRangeFromSources(sources influxql.Sources) *Ti
 		case *influxql.SubQuery:
 			if s.Statement != nil {
 				// Recursively check the subquery
-				if timeRange := qf.extractTimeRangeFromStatement(s.Statement); timeRange != nil {
+				if timeRange := qf.ExtractTimeRangeFromStatement(s.Statement); timeRange != nil {
 					return timeRange
 				}
 			}
@@ -411,11 +420,7 @@ func (qf *QueryFilter) extractTimeConditions(expr influxql.Expr, start, end *tim
 			if timeLit, ok := e.RHS.(*influxql.TimeLiteral); ok {
 				timeVal = timeLit.Val
 			} else if strLit, ok := e.RHS.(*influxql.StringLiteral); ok {
-				timeVal, err = time.Parse(time.RFC3339, strLit.Val)
-				if err != nil {
-					// Try other common time formats if RFC3339 fails
-					timeVal, err = time.Parse("2006-01-02T15:04:05Z", strLit.Val)
-				}
+				timeVal, err = qf.parseTimeString(strLit.Val)
 			} else if intLit, ok := e.RHS.(*influxql.IntegerLiteral); ok {
 				// Handle integer timestamps (nanoseconds since Unix epoch)
 				timeVal = time.Unix(0, intLit.Val)
@@ -440,10 +445,7 @@ func (qf *QueryFilter) extractTimeConditions(expr influxql.Expr, start, end *tim
 			if timeLit, ok := e.LHS.(*influxql.TimeLiteral); ok {
 				timeVal = timeLit.Val
 			} else if strLit, ok := e.LHS.(*influxql.StringLiteral); ok {
-				timeVal, err = time.Parse(time.RFC3339, strLit.Val)
-				if err != nil {
-					timeVal, err = time.Parse("2006-01-02T15:04:05Z", strLit.Val)
-				}
+				timeVal, err = qf.parseTimeString(strLit.Val)
 			} else if intLit, ok := e.LHS.(*influxql.IntegerLiteral); ok {
 				// Handle integer timestamps (nanoseconds since Unix epoch)
 				timeVal = time.Unix(0, intLit.Val)
@@ -648,4 +650,33 @@ func (qf *QueryFilter) extractMeasurementsFromSources(sources influxql.Sources, 
 			}
 		}
 	}
+}
+
+// parseTimeString tries to parse a time string using various common formats
+func (qf *QueryFilter) parseTimeString(timeStr string) (time.Time, error) {
+	// List of time formats to try, ordered from most specific to least specific
+	timeFormats := []string{
+		time.RFC3339,                  // 2006-01-02T15:04:05Z07:00
+		time.RFC3339Nano,              // 2006-01-02T15:04:05.999999999Z07:00
+		"2006-01-02T15:04:05Z",        // 2006-01-02T15:04:05Z
+		"2006-01-02T15:04:05.000Z",    // 2006-01-02T15:04:05.000Z
+		"2006-01-02T15:04:05.000000Z", // 2006-01-02T15:04:05.000000Z
+		"2006-01-02 15:04:05",         // 2006-01-02 15:04:05
+		"2006-01-02 15:04:05.000",     // 2006-01-02 15:04:05.000
+		"2006-01-02 15:04:05.000000",  // 2006-01-02 15:04:05.000000
+		"2006-01-02T15:04:05",         // 2006-01-02T15:04:05
+		"2006-01-02T15:04:05.000",     // 2006-01-02T15:04:05.000
+		"2006-01-02T15:04:05.000000",  // 2006-01-02T15:04:05.000000
+	}
+
+	var lastErr error
+	for _, format := range timeFormats {
+		if t, err := time.Parse(format, timeStr); err == nil {
+			return t, nil
+		} else {
+			lastErr = err
+		}
+	}
+
+	return time.Time{}, lastErr
 }

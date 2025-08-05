@@ -76,6 +76,7 @@ type FilteringRules struct {
 	BlockUnlimitedGroupBy  bool     `yaml:"block_unlimited_group_by"`
 	BlockExpensiveShows    bool     `yaml:"block_expensive_shows"`
 	MaxShowSeriesLimit     int      `yaml:"max_show_series_limit"`
+	MaxOffsetLimit         int      `yaml:"max_offset_limit"` // Maximum allowed OFFSET value in queries
 	BlockedFunctions       []string `yaml:"blocked_functions"`
 	BlockedStatements      []string `yaml:"blocked_statements"`
 	AllowedMeasurements    []string `yaml:"allowed_measurements"`
@@ -209,6 +210,7 @@ func setDefaults(config *Config) {
 	if rules.MaxShowSeriesLimit == 0 {
 		rules.MaxShowSeriesLimit = 10000
 	}
+	// MaxOffsetLimit defaults to 0 (disabled) - don't set a default value
 }
 
 func validate(config *Config) error {
@@ -239,6 +241,9 @@ func validate(config *Config) error {
 	}
 	if config.Proxy.FilteringRules.MaxShowSeriesLimit < 0 {
 		return fmt.Errorf("filtering_rules.max_show_series_limit must be positive")
+	}
+	if config.Proxy.FilteringRules.MaxOffsetLimit < 0 {
+		return fmt.Errorf("filtering_rules.max_offset_limit must be positive")
 	}
 	if config.Proxy.InfluxDBClient.TimeoutSeconds < 0 {
 		return fmt.Errorf("influxdb_client.timeout_seconds must be positive")

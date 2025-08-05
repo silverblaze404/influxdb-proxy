@@ -1,4 +1,4 @@
-.PHONY: build run test clean docker
+Makefile.PHONY: build run test clean docker
 
 # Build the application
 build:
@@ -34,18 +34,6 @@ deps:
 # Build Docker image
 docker-build:
 	docker build -t influxdb-proxy .
-
-# Run with Docker Compose
-docker-up:
-	docker-compose up -d
-
-# Stop Docker Compose
-docker-down:
-	docker-compose down
-
-# View logs
-docker-logs:
-	docker-compose logs -f proxy
 
 # Format code
 fmt:
