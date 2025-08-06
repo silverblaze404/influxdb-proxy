@@ -64,8 +64,11 @@ Located in `internal/filter/query_filter.go`, the filter engine provides:
 - **Query Parser**: Uses InfluxDB's official InfluxQL library to parse and analyze queries
 - **Rule Engine**: Applies configurable filtering rules
 - **Time Validation**: Ensures queries have time filters and reasonable time ranges
+- **Duration Monitoring**: Warns about queries with time ranges exceeding configured thresholds
+- **Regex Detection**: Identifies and optionally blocks queries using regex operators (=~ or !~)
 - **Statement Filtering**: Blocks only statements explicitly listed in configuration (blacklist approach)
 - **Function Blocking**: Prevents expensive functions like `count(*)`
+- **OFFSET Validation**: Limits maximum OFFSET values to prevent expensive pagination
 
 ### InfluxDB Client
 
@@ -98,9 +101,12 @@ Located in `internal/config/config.go`, configuration handles:
 5. **Query Parsing**: InfluxDB's InfluxQL library parses and analyzes the query structure
 6. **Rule Validation**: Query filter applies configured rules:
    - Requires time filters
-   - Validates time range (max 30 days by default)
+   - Validates time range (max 35 days by default)
+   - Logs warnings for long-duration queries (14 days by default)
+   - Controls regex usage (warning/blocking of =~ and !~ operators)
    - Checks allowed measurements (if configured)
    - Blocks expensive operations
+   - Validates OFFSET limits
    - Blocks only statements explicitly listed in `blocked_statements`
 7. **Decision**:
    - **If Allowed**: Forward to InfluxDB and return response
@@ -119,13 +125,17 @@ Located in `internal/config/config.go`, configuration handles:
 
 - **IP Whitelisting**: Configurable IP addresses/CIDR ranges that bypass all filtering rules
 - **Time Filter Enforcement**: Blocks queries without WHERE time clauses
-- **Time Range Limits**: Prevents queries spanning excessive time periods (default: 30 days)
+- **Time Range Limits**: Prevents queries spanning excessive time periods (default: 35 days)
+- **Query Duration Monitoring**: Logs warnings for queries exceeding configured duration thresholds (default: 14 days)
+- **Regex Usage Control**: Configurable warning and blocking of regex operators (=~ or !~) in queries
 - **Measurement Filtering**: Optional whitelist of allowed measurement names
 - **Statement Control**: Uses blacklist approach - blocks only explicitly configured statements
 - **Function Filtering**: Blocks expensive aggregation functions
 - **SHOW Series Control**: Configurable limits for SHOW SERIES queries
 - **Wildcard SELECT Protection**: Optional blocking of SELECT * without LIMIT
 - **GROUP BY Protection**: Optional blocking of unlimited GROUP BY queries
+- **OFFSET Limiting**: Configurable maximum OFFSET values to prevent expensive pagination
+- **External Configuration**: Support for loading filtering rules from external YAML files
 
 ### InfluxDB Client Optimization
 
@@ -151,21 +161,48 @@ The proxy is configured via `config.yaml` with these main sections:
 - **InfluxDB Client Parameters**: Connection pooling and timeout settings optimized for single-host InfluxDB connections
 - **Server Timeout Parameters**: HTTP server timeout configuration with smart defaults (2x client timeouts)
 - **Filtering Rules**: Query validation and blocking criteria including:
-  - Time-based filtering (require time filters, max time range)
+  - Time-based filtering (require time filters, max time range, query duration warnings)
+  - Regex usage control (warning and blocking of regex operators)
   - Performance filtering (wildcard SELECT, unlimited GROUP BY, expensive SHOW queries)
   - Measurement-based filtering (allowed measurement whitelist)
   - Function/statement filtering (blocked functions and statements)
+  - OFFSET limiting (maximum allowed OFFSET values)
+  - External filtering rules file support
 - **Query Filtering Control**: Global disable option (`disable_query_filtering`) to bypass all filtering
 - **Logging**: Log level and format settings
 - **Metrics**: Enable/disable metrics collection
+
+### External Filtering Rules
+
+The proxy supports loading filtering rules from an external YAML file:
+
+- **Configuration**: Set `proxy.filtering_rules_file` to specify the path to an external filtering rules file
+- **Precedence**: External file takes precedence over inline filtering rules in the main config
+- **Hot Reloading**: The external file is loaded at startup (restart required for changes)
+- **Format**: Same YAML structure as the inline `filtering_rules` section
+
+Example external filtering rules file (`filtering_rules.yaml`):
+
+```yaml
+require_time_filter: true
+max_time_range_hours: 840
+warn_query_duration_hours: 336
+warn_on_regex_usage: true
+block_regex_usage: false
+blocked_statements:
+  - "DELETE"
+```
 
 ## Security Considerations
 
 - **Query Injection Protection**: InfluxDB's InfluxQL parser validates syntax and structure
 - **Resource Protection**: Prevents expensive queries that could impact performance
-- **IP-based Access Control**: Bypass filtering rules on the basis of whitelised ips and blacklisted ips configuration
+- **IP-based Access Control**: Bypass filtering rules on the basis of whitelisted IPs and blacklisted IPs configuration
 - **Statement Restriction**: Blocks only explicitly configured statements (blacklist approach)
 - **Time-based Filtering**: Ensures queries are bounded to prevent full table scans
+- **Query Duration Monitoring**: Warns about potentially long-running queries to help identify performance issues
+- **Regex Usage Control**: Monitors and optionally blocks regex operators that can be expensive
+- **OFFSET Limiting**: Prevents expensive pagination operations with large offset values
 - **Measurement Access Control**: Optional whitelist to restrict access to specific measurements
 
 ## Filtering Strategy

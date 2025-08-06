@@ -25,6 +25,7 @@ test-coverage:
 clean:
 	rm -f influxdb-proxy
 	rm -f coverage.out coverage.html
+	go clean -cache
 
 # Download dependencies
 deps:
@@ -60,3 +61,10 @@ example-queries:
 	@echo ""
 	@echo "Metrics:"
 	@echo "curl http://localhost:8087/proxy_metrics"
+
+# Sanity checks
+sanity:
+	go clean -cache
+	go fmt ./...
+	go test ./... -v
+	go build -o influxdb-proxy cmd/proxy/main.go

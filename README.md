@@ -68,10 +68,32 @@ proxy:
     max_concurrent_requests: 100     # Max concurrent requests to InfluxDB (default: 100)
     request_timeout_seconds: 30      # Timeout for throttled requests (default: 30)
 
-  filtering_rules:
-    # Time-based filtering
+  # Path to external filtering rules file
+  # If specified, this file will be loaded for filtering rules
+  # If not specified, inline filtering rules will be used
+  filtering_rules_file: "filtering_rules.yaml"
+  
+# filtering_rules:
     require_time_filter: true
-    max_time_range_hours: 720          # 30 days max time range
+    max_time_range_hours: 840         # 35 days max time range
+    warn_query_duration_hours: 336    # Warn if query takes longer than 14 days
+    warn_on_regex_usage: true         # Log warning when queries use regex operators (=~ or !~)
+    block_regex_usage: false          # Block queries with regex operators
+    block_wildcard_select: false      # Block SELECT * without LIMIT
+    block_unlimited_group_by: false   # Block GROUP BY without LIMIT or time bucketing
+    block_expensive_shows: false      # Block SHOW SERIES without LIMIT
+    max_show_series_limit: 10000      # Max LIMIT for SHOW SERIES queries
+    max_offset_limit: 10000           # Maximum allowed OFFSET value in queries (0 = disabled)
+    allowed_measurements:             # If not empty, only allow queries on these measurements
+      # - "cpu"                       # Example: allow queries on 'cpu' measurement
+      # - "memory"                    # Example: allow queries on 'memory' measurement
+    blocked_functions:
+      # - "count(*)"                  # Block count(*) without WHERE clause
+    blocked_statements:
+      - "DELETE"                      # Block DELETE statements
+      # - "DROP"                      # Block DROP statements
+    require_time_filter: true
+    max_time_range_hours: 840           # 35 days max time range
 
     # Performance filtering
     block_wildcard_select: false       # Block SELECT * without LIMIT
@@ -146,11 +168,15 @@ The proxy uses a YAML configuration file (`config.yaml`) with the following main
 ### Filtering Rules
 
 - `proxy.filtering_rules.require_time_filter`: Require time filters in queries
-- `proxy.filtering_rules.max_time_range_hours`: Maximum allowed time range (default: 720 hours/30 days)
+- `proxy.filtering_rules.max_time_range_hours`: Maximum allowed time range (default: 840 hours/35 days)
+- `proxy.filtering_rules.warn_query_duration_hours`: Warn if query duration exceeds threshold (default: 336 hours/14 days)
+- `proxy.filtering_rules.warn_on_regex_usage`: Log warning when queries use regex operators (=~ or !~)
+- `proxy.filtering_rules.block_regex_usage`: Block queries with regex operators
 - `proxy.filtering_rules.block_wildcard_select`: Block SELECT * without LIMIT
 - `proxy.filtering_rules.block_unlimited_group_by`: Block GROUP BY without LIMIT or time bucketing
 - `proxy.filtering_rules.block_expensive_shows`: Block SHOW SERIES without LIMIT
 - `proxy.filtering_rules.max_show_series_limit`: Maximum LIMIT for SHOW SERIES queries
+- `proxy.filtering_rules.max_offset_limit`: Maximum allowed OFFSET value in queries (0 = disabled)
 - `proxy.filtering_rules.allowed_measurements`: Whitelist of allowed measurement names (if specified, only these are allowed)
 - `proxy.filtering_rules.blocked_functions`: List of blocked functions
 - `proxy.filtering_rules.blocked_statements`: List of blocked SQL statements (all others allowed by default)
@@ -196,13 +222,17 @@ The proxy applies the following filtering rules:
 2. **Global Filtering Disable**: When `disable_query_filtering` is true, filtering is disabled for all IPs except those in `blacklisted_ips`
 3. **IP Blacklisting**: IPs in the `blacklisted_ips` list are always filtered, even when `disable_query_filtering` is true
 4. **Time Filter Requirement**: Queries must include a time filter (WHERE time > ... AND time < ...)
-5. **Time Range Limit**: Time range cannot exceed the configured maximum (default: 30 days)
-6. **Measurement Filtering**: If `allowed_measurements` is configured, only queries on those measurements are allowed
-7. **Expensive Function Detection**: Blocks queries with expensive functions without proper constraints
-8. **SHOW Series Limits**: Controls SHOW SERIES queries with configurable limits
-9. **Wildcard SELECT Protection**: Can block SELECT * queries without LIMIT clauses
-10. **GROUP BY Protection**: Can block unlimited GROUP BY queries
-11. **Statement Blocking**: Only blocks statements explicitly listed in `blocked_statements` (all others allowed by default)
+5. **Time Range Limit**: Time range cannot exceed the configured maximum (default: 35 days)
+6. **Query Duration Warning**: Log warnings for queries that exceed the configured duration threshold (default: 14 days)
+7. **Regex Usage Control**: Option to warn about or block queries using regex operators (=~ or !~)
+8. **Measurement Filtering**: If `allowed_measurements` is configured, only queries on those measurements are allowed
+9. **Expensive Function Detection**: Blocks queries with expensive functions without proper constraints
+10. **SHOW Series Limits**: Controls SHOW SERIES queries with configurable limits
+11. **Wildcard SELECT Protection**: Can block SELECT * queries without LIMIT clauses
+12. **GROUP BY Protection**: Can block unlimited GROUP BY queries
+13. **Statement Blocking**: Only blocks statements explicitly listed in `blocked_statements` (all others allowed by default)
+14. **OFFSET Limiting**: Can limit maximum OFFSET values to prevent expensive pagination
+15. **External Filtering Rules**: Support for loading filtering rules from an external YAML file
 
 ### IP Address Precedence
 

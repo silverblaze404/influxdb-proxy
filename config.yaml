@@ -29,6 +29,7 @@ proxy:
 # filtering_rules:
   # require_time_filter: true
   # max_time_range_hours: 720
+  # warn_on_regex_usage: true          # Log warning when queries use regex operators (=~ or !~)
   
   # IPs that bypass all filtering rules
   whitelisted_ips:
