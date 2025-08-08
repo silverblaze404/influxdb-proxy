@@ -206,9 +206,6 @@ func setDefaults(config *Config) {
 	if rules.MaxTimeRangeHours == 0 {
 		rules.MaxTimeRangeHours = 840 // 35 days
 	}
-	if rules.WarnQueryDurationHours == 0 {
-		rules.WarnQueryDurationHours = 336 // 14 days
-	}
 	if rules.MaxShowSeriesLimit == 0 {
 		rules.MaxShowSeriesLimit = 10000
 	}
