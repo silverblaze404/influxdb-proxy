@@ -54,8 +54,8 @@ Desktop.ini
 .env.*.local
 
 # Configuration files (uncomment if you want to ignore local configs)
-# config.local.yaml
-# config.dev.yaml
+config.local.yaml
+filtering_rules.local.yaml
 
 # Logs
 *.log
